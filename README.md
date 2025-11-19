@@ -6,7 +6,7 @@ Body (raw, JSON):
   "email": "user@example.com",
   "password": "password123"
 }
-Response: JSON chứa accessToken và refreshToken.
+Response: JSON chứa accessToken và refreshToken, email.
 
 2. Đăng nhập (Login)
 Method: POST
