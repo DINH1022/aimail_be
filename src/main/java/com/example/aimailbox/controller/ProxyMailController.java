@@ -2,13 +2,11 @@ package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.response.LabelDetailResponse;
 import com.example.aimailbox.dto.response.LabelResponse;
+import com.example.aimailbox.dto.response.ListMessagesResponse;
 import com.example.aimailbox.service.ProxyMailService;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -27,5 +25,15 @@ public class ProxyMailController {
     @GetMapping("/{id}")
     public Mono<LabelDetailResponse> getAllLabels(@PathVariable String id) {
         return proxyMailService.getLabel(id);
+    }
+    @GetMapping("/{id}/emails")
+    public Mono<ListMessagesResponse> getAllLabels(
+            @PathVariable String id,
+            @RequestParam(required = false) Integer maxResults,
+            @RequestParam(required = false) String pageToken,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false,defaultValue = "false") Boolean includeSpamTrash
+            ) {
+        return proxyMailService.getListMessages(maxResults,pageToken,query,id,includeSpamTrash);
     }
 }
