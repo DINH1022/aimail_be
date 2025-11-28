@@ -1,6 +1,5 @@
 package com.example.aimailbox.dto.response;
 
-import com.example.aimailbox.dto.response.mail.Thread;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
@@ -11,8 +10,8 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 @FieldDefaults(level =  AccessLevel.PRIVATE)
-public class ListThreadResponse {
-    List<Thread> threads;
-    String nextPageToken;
-    String resultSizeEstimate;
+public class ThreadDetailResponse {
+    String id;
+    String snippet;
+    List<MessageDetailResponse> messages;
 }

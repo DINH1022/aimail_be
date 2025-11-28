@@ -27,14 +27,14 @@ public class ProxyMailController {
         return proxyMailService.getLabel(id);
     }
     @GetMapping("/{id}/emails")
-    public Mono<ListThreadResponse> getAllLabels(
+    public Mono<ListThreadResponse> getListThreads(
             @PathVariable String id,
             @RequestParam(required = false) Integer maxResults,
             @RequestParam(required = false) String pageToken,
             @RequestParam(required = false) String query,
             @RequestParam(required = false,defaultValue = "false") Boolean includeSpamTrash
             ) {
-        return proxyMailService.getListMessages(maxResults,pageToken,query,id,includeSpamTrash);
+        return proxyMailService.getListThreads(maxResults,pageToken,query,id,includeSpamTrash);
     }
 
 }

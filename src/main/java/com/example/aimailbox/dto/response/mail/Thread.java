@@ -1,4 +1,4 @@
-package com.example.aimailbox.dto.response;
+package com.example.aimailbox.dto.response.mail;
 
 
 import lombok.*;
@@ -9,7 +9,7 @@ import lombok.experimental.FieldDefaults;
 @AllArgsConstructor
 @Builder
 @FieldDefaults(level =  AccessLevel.PRIVATE)
-public class ThreadResponse {
+public class Thread {
     String id;
     String snippet;
 }

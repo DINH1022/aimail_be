@@ -1,6 +1,7 @@
 package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.response.MessageDetailResponse;
+import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.service.ProxyMailService;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -14,7 +15,7 @@ import reactor.core.publisher.Mono;
 public class EmailController {
     ProxyMailService proxyMailService;
     @GetMapping("/{id}")
-    public Mono<MessageDetailResponse> getEmailDetail (@PathVariable String id) {
-        return proxyMailService.getMessageDetail(id);
+    public Mono<ThreadDetailResponse> getEmailDetail (@PathVariable String id) {
+        return proxyMailService.getThreadDetail(id);
     }
 }

@@ -22,5 +22,4 @@ public class MessageDetailResponse {
     String textBody;
     String htmlBody;
     List<AttachmentResponse> attachments = new ArrayList<>();
-    List<MessageDetailResponse> nestedMessages = new ArrayList<>(); // reply/forward
 }
