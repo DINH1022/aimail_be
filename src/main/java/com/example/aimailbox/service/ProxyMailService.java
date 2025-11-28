@@ -1,6 +1,7 @@
 package com.example.aimailbox.service;
 
 import com.example.aimailbox.dto.request.EmailSendRequest;
+import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
 import com.example.aimailbox.wrapper.LabelWrapper;
@@ -113,6 +114,32 @@ public class ProxyMailService {
         }
         return Mono.fromCallable(() -> createMimeMessage(request))
                 .flatMap(email -> sendToGmailApi(email, request.getThreadId()));
+    }
+    public Mono<String> modifyMessageLabels(ModifyEmailRequest request) {
+        Map<String, Object> payload = new HashMap<>();
+        if (request.getAddLabelIds() != null) {
+            payload.put("addLabelIds", request.getAddLabelIds());
+        }
+        if (request.getRemoveLabelIds() != null) {
+            payload.put("removeLabelIds", request.getRemoveLabelIds());
+        }
+        return gmailWebClient.post()
+                .uri("/threads/{id}/modify", request.getThreadId())
+                .headers(header -> header.setBearerAuth(token))
+                .bodyValue(payload)
+                .retrieve()
+                .bodyToMono(String.class)
+                .map(response -> "Labels modified successfully")
+                .onErrorMap(e -> new RuntimeException("Failed to modify message labels", e));
+    }
+    public Mono<Void> deleteMessage(String messageId)
+    {
+        return gmailWebClient.delete()
+                .uri("/messages/{id}",messageId)
+                .headers(header ->header.setBearerAuth(token))
+                .retrieve()
+                .bodyToMono(Void.class)
+                .onErrorMap(e-> new RuntimeException("Failed to delete message",e));
     }
     private Mono<GmailSendResponse> sendToGmailApi(MimeMessage email, String threadId) {
         // 1. Đóng gói đoạn code Blocking vào Mono.fromCallable

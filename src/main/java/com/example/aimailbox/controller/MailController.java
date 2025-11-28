@@ -1,6 +1,7 @@
 package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.request.EmailSendRequest;
+import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.GmailSendResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.service.ProxyMailService;
@@ -43,5 +44,14 @@ public class MailController {
     @PostMapping(value = "/send",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Mono<GmailSendResponse> sendEmail(@ModelAttribute EmailSendRequest request) {
         return proxyMailService.sendEmail(request);
+    }
+    @PostMapping("/modify")
+    public Mono<String> modifyEmail(@RequestBody ModifyEmailRequest request) {
+        return proxyMailService.modifyMessageLabels(request);
+    }
+
+    @DeleteMapping("/{id}")
+    public Mono<Void> deleteEmail(@PathVariable String id) {
+        return proxyMailService.deleteMessage(id);
     }
 }
