@@ -2,7 +2,7 @@ package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.response.LabelDetailResponse;
 import com.example.aimailbox.dto.response.LabelResponse;
-import com.example.aimailbox.dto.response.ListMessagesResponse;
+import com.example.aimailbox.dto.response.ListThreadResponse;
 import com.example.aimailbox.service.ProxyMailService;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -27,7 +27,7 @@ public class ProxyMailController {
         return proxyMailService.getLabel(id);
     }
     @GetMapping("/{id}/emails")
-    public Mono<ListMessagesResponse> getAllLabels(
+    public Mono<ListThreadResponse> getAllLabels(
             @PathVariable String id,
             @RequestParam(required = false) Integer maxResults,
             @RequestParam(required = false) String pageToken,
@@ -36,4 +36,5 @@ public class ProxyMailController {
             ) {
         return proxyMailService.getListMessages(maxResults,pageToken,query,id,includeSpamTrash);
     }
+
 }
