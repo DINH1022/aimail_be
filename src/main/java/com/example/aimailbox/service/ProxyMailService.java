@@ -173,6 +173,7 @@ public class ProxyMailService {
         if(message.getPayload()!=null)
         {
             List<MessagePartHeader> headers = message.getPayload().getHeaders();
+            messageDetailResponse.setMessageId(getHeader(headers,"Message-ID"));
             messageDetailResponse.setFrom(getHeader(headers, "From"));
             messageDetailResponse.setTo(getHeader(headers, "To"));
             messageDetailResponse.setSubject(getHeader(headers, "Subject"));

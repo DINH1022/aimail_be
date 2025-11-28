@@ -41,7 +41,7 @@ public class MailController {
                 });
     }
     @PostMapping(value = "/send",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Mono<GmailSendResponse> sendEmail(@RequestPart EmailSendRequest request) {
+    public Mono<GmailSendResponse> sendEmail(@ModelAttribute EmailSendRequest request) {
         return proxyMailService.sendEmail(request);
     }
 }
