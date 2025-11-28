@@ -1,5 +1,7 @@
 package com.example.aimailbox.controller;
 
+import com.example.aimailbox.dto.request.EmailSendRequest;
+import com.example.aimailbox.dto.response.GmailSendResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.service.ProxyMailService;
 import lombok.RequiredArgsConstructor;
@@ -37,5 +39,9 @@ public class MailController {
                             .header("Content-Length", String.valueOf(attachmentData.length))
                             .body(attachmentData);
                 });
+    }
+    @PostMapping(value = "/send",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Mono<GmailSendResponse> sendEmail(@RequestPart EmailSendRequest request) {
+        return proxyMailService.sendEmail(request);
     }
 }

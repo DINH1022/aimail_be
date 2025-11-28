@@ -1,24 +1,28 @@
 package com.example.aimailbox.service;
 
+import com.example.aimailbox.dto.request.EmailSendRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
 import com.example.aimailbox.wrapper.LabelWrapper;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Session;
+import jakarta.mail.internet.*;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
+import java.util.*;
 
 @Service
 @FieldDefaults(makeFinal = true,level = AccessLevel.PRIVATE)
@@ -27,7 +31,6 @@ public class ProxyMailService {
     // In a real application, the token would be retrieved from the authenticated user's session or security context
     String token ="";
     WebClient gmailWebClient;
-    ObjectMapper objectMapper;
     // Fetch all labels
     public Mono<List<LabelResponse>> getAllLabels() {
         return gmailWebClient.get()
@@ -101,6 +104,47 @@ public class ProxyMailService {
                 .bodyToMono(AttachmentResponse.class)
                 .onErrorMap(e-> new RuntimeException("Failed to fetch attachment",e));
     }
+
+    public Mono<GmailSendResponse> sendEmail(EmailSendRequest request) {
+        if(request.getInReplyToMessageId()!=null && !request.getInReplyToMessageId().isEmpty()){
+            String subject = request.getSubject();
+            String replySubject = subject.startsWith("Re:") ? subject : "Re: " + subject;
+            request.setSubject(replySubject);
+        }
+        return Mono.fromCallable(() -> createMimeMessage(request))
+                .flatMap(email -> sendToGmailApi(email, request.getThreadId()));
+    }
+    private Mono<GmailSendResponse> sendToGmailApi(MimeMessage email, String threadId) {
+        // 1. Đóng gói đoạn code Blocking vào Mono.fromCallable
+        return Mono.fromCallable(() -> {
+                    try {
+                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                        email.writeTo(buffer);
+                        byte[] rawBytes = buffer.toByteArray();
+                        String encodedEmail = Base64.getUrlEncoder().encodeToString(rawBytes);
+
+                        Map<String, String> payload;
+                        if (threadId != null) {
+                            payload = Map.of("raw", encodedEmail, "threadId", threadId);
+                        } else {
+                            payload = Map.of("raw", encodedEmail);
+                        }
+                        return payload;
+                    } catch (Exception e) {
+                        // Ném lỗi ra để Mono xử lý
+                        throw new RuntimeException("Failed to create email payload", e);
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(payload -> gmailWebClient.post()
+                        .uri("/messages/send")
+                        .headers(header -> header.setBearerAuth(token))
+                        .bodyValue(payload)
+                        .retrieve()
+                        .bodyToMono(GmailSendResponse.class)
+                );
+    }
+
     private ThreadDetailResponse parseListMessage(ThreadDetail threadDetail)
     {
         ThreadDetailResponse threadDetailResponse = ThreadDetailResponse.builder()
@@ -120,7 +164,6 @@ public class ProxyMailService {
 
     private MessageDetailResponse parseMessage(Message message)
     {
-        System.out.println(message);
         MessageDetailResponse messageDetailResponse = MessageDetailResponse.builder()
                 .id(message.getId())
                 .threadId(message.getThreadId())
@@ -194,13 +237,63 @@ public class ProxyMailService {
         byte[] decoded = Base64.getUrlDecoder().decode(data);
         return new String(decoded, StandardCharsets.UTF_8);
     }
-    private Message decodeNestedMessage(String base64Data) {
-        if (base64Data == null) return null;
-        byte[] decoded = Base64.getUrlDecoder().decode(base64Data);
-        try {
-            return objectMapper.readValue(decoded, Message.class);
-        } catch (Exception e) {
-            return null;
+    private MimeMessage createMimeMessage(EmailSendRequest request) throws MessagingException, IOException {
+        Session session = Session.getDefaultInstance(new Properties(), null);
+        MimeMessage email = new MimeMessage(session);
+        email.setFrom(new InternetAddress("me"));
+        if(request.getTo()!=null && !request.getTo().isEmpty())
+        {
+            email.addRecipients(jakarta.mail.Message.RecipientType.TO,InternetAddress.parse(request.getTo()));
         }
+        if(request.getBcc()!=null && !request.getBcc().isEmpty())
+        {
+            email.addRecipients(jakarta.mail.Message.RecipientType.BCC,InternetAddress.parse(request.getBcc()));
+        }
+        if(request.getCc()!=null && !request.getCc().isEmpty())
+        {
+            email.addRecipients(jakarta.mail.Message.RecipientType.CC,InternetAddress.parse(request.getCc()));
+        }
+        email.setSubject(request.getSubject(),"UTF-8");
+        if(request.getInReplyToMessageId()!=null&& !request.getInReplyToMessageId().isEmpty())
+        {
+            email.setHeader("In-Reply-To",request.getInReplyToMessageId());
+            email.setHeader("References",request.getInReplyToMessageId());
+        }
+
+        MimeMultipart rootMultipart = new MimeMultipart("mixed");
+        MimeBodyPart contentBodyPart = getMimeBodyPart(request);
+        rootMultipart.addBodyPart(contentBodyPart);
+        if(request.getAttachment() != null)
+        {
+            for(MultipartFile file:request.getAttachment())
+            {
+                if(file.isEmpty()) continue;
+                MimeBodyPart attachmentPart = new MimeBodyPart();
+                String fileName = file.getOriginalFilename();
+                attachmentPart.setFileName(fileName);
+                attachmentPart.setContent(file.getBytes(), file.getContentType());
+                rootMultipart.addBodyPart(attachmentPart);
+            }
+        }
+        email.setContent(rootMultipart);
+        return email;
+
+    }
+
+    private static MimeBodyPart getMimeBodyPart(EmailSendRequest request) throws MessagingException {
+        MimeBodyPart contentBodyPart = new MimeBodyPart();
+        MimeMultipart alternativeMultipart = new MimeMultipart("alternative");
+        MimeBodyPart textPart = new MimeBodyPart();
+        String content = request.getContent() != null ? request.getContent() : "";
+        String plainText = request.isHtml() ? content.replaceAll("\\<.*?\\>", "") : content;
+        textPart.setText(plainText, "UTF-8");
+        alternativeMultipart.addBodyPart(textPart);
+        if (request.isHtml()) {
+            MimeBodyPart htmlPart = new MimeBodyPart();
+            htmlPart.setContent(content, "text/html; charset=UTF-8");
+            alternativeMultipart.addBodyPart(htmlPart);
+        }
+        contentBodyPart.setContent(alternativeMultipart);
+        return contentBodyPart;
     }
 }
