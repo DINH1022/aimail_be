@@ -141,6 +141,15 @@ public class ProxyMailService {
                 .bodyToMono(Void.class)
                 .onErrorMap(e-> new RuntimeException("Failed to delete message",e));
     }
+    public Mono<Void> deleteMail(String mailId)
+    {
+        return gmailWebClient.delete()
+                .uri("/threads/{id}",mailId)
+                .headers(header ->header.setBearerAuth(token))
+                .retrieve()
+                .bodyToMono(Void.class)
+                .onErrorMap(e-> new RuntimeException("Failed to delete message",e));
+    }
     private Mono<GmailSendResponse> sendToGmailApi(MimeMessage email, String threadId) {
         // 1. Đóng gói đoạn code Blocking vào Mono.fromCallable
         return Mono.fromCallable(() -> {

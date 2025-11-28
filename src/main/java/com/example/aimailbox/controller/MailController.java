@@ -49,9 +49,12 @@ public class MailController {
     public Mono<String> modifyEmail(@RequestBody ModifyEmailRequest request) {
         return proxyMailService.modifyMessageLabels(request);
     }
-
     @DeleteMapping("/{id}")
-    public Mono<Void> deleteEmail(@PathVariable String id) {
+    public Mono<Void> deleteMail(@PathVariable String id) {
+        return proxyMailService.deleteMail(id);
+    }
+    @DeleteMapping("/message/{id}")
+    public Mono<Void> deleteMessage(@PathVariable String id) {
         return proxyMailService.deleteMessage(id);
     }
 }
