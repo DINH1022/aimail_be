@@ -1,15 +1,15 @@
-package com.example.aimailbox.dto.response;
+package com.example.aimailbox.dto.response.mail;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 @Data
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 @FieldDefaults(level =  AccessLevel.PRIVATE)
-public class AttachmentResponse {
-    String attachmentId;
-    Long size;
-    String data;
+public class Attachment {
+   String filename;
+   String mimeType;
+   String attachmentId;
 }

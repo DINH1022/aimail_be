@@ -1,5 +1,6 @@
 package com.example.aimailbox.dto.response;
 
+import com.example.aimailbox.dto.response.mail.Attachment;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
@@ -21,5 +22,5 @@ public class MessageDetailResponse {
     String snippet;
     String textBody;
     String htmlBody;
-    List<AttachmentResponse> attachments = new ArrayList<>();
+    List<Attachment> attachments = new ArrayList<>();
 }

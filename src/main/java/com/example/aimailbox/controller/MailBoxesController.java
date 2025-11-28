@@ -15,7 +15,7 @@ import java.util.List;
 @RequestMapping("/mailboxes")
 @RequiredArgsConstructor
 @FieldDefaults(level = lombok.AccessLevel.PRIVATE, makeFinal = true)
-public class ProxyMailController {
+public class MailBoxesController {
     ProxyMailService proxyMailService;
 
     @GetMapping("")

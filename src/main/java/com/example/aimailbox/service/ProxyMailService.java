@@ -1,10 +1,7 @@
 package com.example.aimailbox.service;
 
 import com.example.aimailbox.dto.response.*;
-import com.example.aimailbox.dto.response.mail.Message;
-import com.example.aimailbox.dto.response.mail.MessagePart;
-import com.example.aimailbox.dto.response.mail.MessagePartHeader;
-import com.example.aimailbox.dto.response.mail.ThreadDetail;
+import com.example.aimailbox.dto.response.mail.*;
 import com.example.aimailbox.wrapper.LabelWrapper;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,6 +28,7 @@ public class ProxyMailService {
     String token ="";
     WebClient gmailWebClient;
     ObjectMapper objectMapper;
+    // Fetch all labels
     public Mono<List<LabelResponse>> getAllLabels() {
         return gmailWebClient.get()
                 .uri("/labels")
@@ -41,7 +39,7 @@ public class ProxyMailService {
                 .defaultIfEmpty(List.of())
                 .onErrorMap(e-> new RuntimeException("Failed to fetch labels",e));
     }
-
+    // Fetch label details by ID
     public Mono<LabelDetailResponse>  getLabel(String id) {
         return gmailWebClient.get()
                 .uri("/labels/{id}",id)
@@ -51,6 +49,7 @@ public class ProxyMailService {
                 .defaultIfEmpty(new LabelDetailResponse())
                 .onErrorMap(e-> new RuntimeException("Failed to fetch label details",e));
     }
+    // Fetch list of threads with optional parameters
     public Mono<ListThreadResponse> getListThreads(Integer maxResults
             , String pageToken
             , String query
@@ -81,7 +80,7 @@ public class ProxyMailService {
                 .onErrorMap(e-> new RuntimeException("Failed to fetch messages",e));
     }
 
-
+    // Fetch thread details by ID
     public Mono<ThreadDetailResponse> getThreadDetail(String id) {
         return gmailWebClient.get()
                 .uri(uriBuilder ->
@@ -94,7 +93,14 @@ public class ProxyMailService {
                 .bodyToMono(ThreadDetail.class)
                 .map(this::parseListMessage);
     }
-
+    public Mono<AttachmentResponse> getAttachment(String messageId,String attachmentId) {
+        return gmailWebClient.get()
+                .uri("/messages/{messageId}/attachments/{attachmentId}",messageId,attachmentId)
+                .headers(header ->header.setBearerAuth(token))
+                .retrieve()
+                .bodyToMono(AttachmentResponse.class)
+                .onErrorMap(e-> new RuntimeException("Failed to fetch attachment",e));
+    }
     private ThreadDetailResponse parseListMessage(ThreadDetail threadDetail)
     {
         ThreadDetailResponse threadDetailResponse = ThreadDetailResponse.builder()
@@ -163,7 +169,7 @@ public class ProxyMailService {
             }
         }
         if (part.getFilename() != null && !part.getFilename().isBlank()) {
-            messageDetailResponse.getAttachments().add(new AttachmentResponse(
+            messageDetailResponse.getAttachments().add(new Attachment(
                     part.getFilename(),
                     part.getMimeType(),
                     part.getBody() != null ? part.getBody().getAttachmentId() : null
