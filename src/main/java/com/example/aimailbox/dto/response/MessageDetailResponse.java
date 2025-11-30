@@ -14,6 +14,7 @@ import java.util.List;
 @FieldDefaults(level =  AccessLevel.PRIVATE)
 public class MessageDetailResponse {
     String id;
+    String messageId;
     String threadId;
     String from;
     String to;
