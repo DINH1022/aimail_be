@@ -11,13 +11,15 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@FieldDefaults(level =  AccessLevel.PRIVATE)
+@FieldDefaults(level = AccessLevel.PRIVATE)
 public class MessageDetailResponse {
     String id;
     String messageId;
     String threadId;
     String from;
     String to;
+    String cc;
+    String bcc;
     String subject;
     String date;
     String snippet;

@@ -233,6 +233,8 @@ public class ProxyMailService {
             messageDetailResponse.setMessageId(getHeader(headers, "Message-ID"));
             messageDetailResponse.setFrom(getHeader(headers, "From"));
             messageDetailResponse.setTo(getHeader(headers, "To"));
+            messageDetailResponse.setCc(getHeader(headers, "Cc"));
+            messageDetailResponse.setBcc(getHeader(headers, "Bcc"));
             messageDetailResponse.setSubject(getHeader(headers, "Subject"));
             String dateStr = getHeader(headers, "Date");
             if (dateStr != null && !dateStr.isEmpty()) {
@@ -320,13 +322,33 @@ public class ProxyMailService {
         rootMultipart.addBodyPart(contentBodyPart);
         if (request.getAttachment() != null) {
             for (MultipartFile file : request.getAttachment()) {
-                if (file.isEmpty())
+                if (file == null || file.isEmpty())
                     continue;
-                MimeBodyPart attachmentPart = new MimeBodyPart();
-                String fileName = file.getOriginalFilename();
-                attachmentPart.setFileName(fileName);
-                attachmentPart.setContent(file.getBytes(), file.getContentType());
-                rootMultipart.addBodyPart(attachmentPart);
+                try {
+                    MimeBodyPart attachmentPart = new MimeBodyPart();
+                    String fileName = file.getOriginalFilename();
+
+                    try {
+                        jakarta.activation.DataSource ds = new jakarta.mail.util.ByteArrayDataSource(file.getBytes(),
+                                file.getContentType() != null ? file.getContentType() : "application/octet-stream");
+                        attachmentPart.setDataHandler(new jakarta.activation.DataHandler(ds));
+                    } catch (Exception ex) {
+                        attachmentPart.setContent(file.getBytes(),
+                                file.getContentType() != null ? file.getContentType() : "application/octet-stream");
+                    }
+
+                    if (fileName != null) {
+                        try {
+                            attachmentPart.setFileName(MimeUtility.encodeText(fileName, "UTF-8", null));
+                        } catch (Exception e) {
+                            attachmentPart.setFileName(fileName);
+                        }
+                    }
+                    attachmentPart.setDisposition(jakarta.mail.Part.ATTACHMENT);
+                    rootMultipart.addBodyPart(attachmentPart);
+                } catch (Exception e) {
+                    throw new IOException("Failed to attach file " + file.getOriginalFilename(), e);
+                }
             }
         }
         email.setContent(rootMultipart);
