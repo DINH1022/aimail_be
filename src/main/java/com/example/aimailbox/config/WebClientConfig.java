@@ -12,4 +12,11 @@ public class WebClientConfig {
                 baseUrl("https://gmail.googleapis.com/gmail/v1/users/me")
                 .build();
     }
+
+    @Bean
+    public WebClient googleOauthClient(WebClient.Builder builder) {
+        return builder
+                .baseUrl("https://oauth2.googleapis.com")
+                .build();
+    }
 }

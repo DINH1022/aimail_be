@@ -2,9 +2,7 @@ package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.AuthRequest;
 import com.example.aimailbox.dto.AuthResponse;
-import com.example.aimailbox.dto.GoogleRequest;
 import com.example.aimailbox.dto.RefreshRequest;
-import com.example.aimailbox.model.RefreshToken;
 import com.example.aimailbox.service.AuthService;
 import com.example.aimailbox.service.RefreshTokenService;
 import org.springframework.http.ResponseEntity;
@@ -30,12 +28,6 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@RequestBody AuthRequest req) {
         AuthResponse resp = authService.register(req);
-        return ResponseEntity.ok(resp);
-    }
-
-    @PostMapping("/google")
-    public ResponseEntity<AuthResponse> google(@RequestBody GoogleRequest req) {
-        AuthResponse resp = authService.loginWithGoogle(req);
         return ResponseEntity.ok(resp);
     }
 
