@@ -22,19 +22,20 @@ public class MailBoxesController {
     public Mono<List<LabelResponse>> getAllLabels() {
         return proxyMailService.getAllLabels();
     }
+
     @GetMapping("/{id}")
     public Mono<LabelDetailResponse> getAllLabels(@PathVariable String id) {
         return proxyMailService.getLabel(id);
     }
+
     @GetMapping("/{id}/emails")
     public Mono<ListThreadResponse> getListThreads(
             @PathVariable String id,
             @RequestParam(required = false) Integer maxResults,
             @RequestParam(required = false) String pageToken,
             @RequestParam(required = false) String query,
-            @RequestParam(required = false,defaultValue = "false") Boolean includeSpamTrash
-            ) {
-        return proxyMailService.getListThreads(maxResults,pageToken,query,id,includeSpamTrash);
+            @RequestParam(required = false, defaultValue = "false") Boolean includeSpamTrash) {
+        return proxyMailService.getListThreads(maxResults, pageToken, query, id, includeSpamTrash);
     }
 
 }

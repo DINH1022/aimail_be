@@ -7,13 +7,9 @@ import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.service.ProxyMailService;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.util.Base64;
 
 @RestController
 @RequestMapping("/emails")
@@ -28,25 +24,31 @@ public class MailController {
     }
 
     @GetMapping("/{messageId}/attachments/{attachmentId}")
-    public Mono<ResponseEntity<Flux<DataBuffer>>> getEmailAttachment(
+    public ResponseEntity<byte[]> getEmailAttachment(
             @PathVariable String messageId,
             @PathVariable String attachmentId,
             @RequestParam String filename,
             @RequestParam String mimeType) {
-        return proxyMailService.streamAttachment(messageId, attachmentId)
-                .map(dataBufferFlux -> {
-                    HttpHeaders headers = new HttpHeaders();
-                    headers.setContentDisposition(
-                            ContentDisposition.attachment()
-                                    .filename(filename)
-                                    .build());
-                    headers.setContentType(MediaType.parseMediaType(mimeType));
+        try {
+            byte[] attachmentData = proxyMailService.getAttachmentBytes(messageId, attachmentId);
 
-                    return ResponseEntity.ok()
-                            .headers(headers)
-                            .body(dataBufferFlux);
-                })
-                .defaultIfEmpty(ResponseEntity.notFound().build());
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentDisposition(
+                    ContentDisposition.attachment()
+                            .filename(filename)
+                            .build());
+            headers.setContentType(MediaType.parseMediaType(mimeType));
+            headers.set("Access-Control-Expose-Headers", "Content-Disposition");
+            headers.setContentLength(attachmentData.length);
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(attachmentData);
+        } catch (Exception error) {
+            error.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(("Error: " + error.getMessage()).getBytes());
+        }
     }
 
     @PostMapping(value = "/send", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

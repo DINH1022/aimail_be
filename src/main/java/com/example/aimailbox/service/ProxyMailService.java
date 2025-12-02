@@ -133,6 +133,29 @@ public class ProxyMailService {
                 .onErrorMap(e -> new RuntimeException("Failed to fetch attachment", e));
     }
 
+    public byte[] getAttachmentBytes(String messageId, String attachmentId) {
+        try {
+            AttachmentResponse attachmentResponse = getAttachment(messageId, attachmentId).block();
+
+            if (attachmentResponse == null) {
+                throw new RuntimeException("Attachment response is null");
+            }
+
+            if (attachmentResponse.getData() == null || attachmentResponse.getData().isEmpty()) {
+                throw new RuntimeException("Attachment data is null or empty");
+            }
+            // Decode base64url data
+            byte[] decodedData = Base64.getUrlDecoder().decode(attachmentResponse.getData());
+
+            return decodedData;
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Invalid base64 data in attachment", e);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Failed to download attachment: " + e.getMessage(), e);
+        }
+    }
+
     public Mono<Flux<DataBuffer>> streamAttachment(String messageId, String attachmentId) {
         return getAttachment(messageId, attachmentId)
                 .map(attachmentResponse -> {
@@ -156,6 +179,15 @@ public class ProxyMailService {
     }
 
     public Mono<GmailSendResponse> sendEmail(EmailSendRequest request) {
+        boolean hasRecipients = (request.getTo() != null && !request.getTo().isEmpty()) ||
+                (request.getCc() != null && !request.getCc().isEmpty()) ||
+                (request.getBcc() != null && !request.getBcc().isEmpty());
+
+        if (!hasRecipients) {
+            return Mono
+                    .error(new IllegalArgumentException("At least one recipient (To, Cc, or Bcc) must be specified"));
+        }
+
         if (request.getInReplyToMessageId() != null && !request.getInReplyToMessageId().isEmpty()) {
             String subject = request.getSubject();
             String replySubject = subject.startsWith("Re:") ? subject : "Re: " + subject;
