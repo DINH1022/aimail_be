@@ -11,9 +11,13 @@ import jakarta.mail.internet.*;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -127,6 +131,28 @@ public class ProxyMailService {
                 .retrieve()
                 .bodyToMono(AttachmentResponse.class)
                 .onErrorMap(e -> new RuntimeException("Failed to fetch attachment", e));
+    }
+
+    public Mono<Flux<DataBuffer>> streamAttachment(String messageId, String attachmentId) {
+        return getAttachment(messageId, attachmentId)
+                .map(attachmentResponse -> {
+                    byte[] decodedData = Base64.getUrlDecoder().decode(attachmentResponse.getData());
+                    DataBufferFactory bufferFactory = new DefaultDataBufferFactory();
+                    int chunkSize = 8192;
+
+                    return Flux.range(0, (decodedData.length + chunkSize - 1) / chunkSize)
+                            .map(chunkIndex -> {
+                                int start = chunkIndex * chunkSize;
+                                int end = Math.min(start + chunkSize, decodedData.length);
+                                int length = end - start;
+
+                                DataBuffer buffer = bufferFactory.allocateBuffer(length);
+                                buffer.write(decodedData, start, length);
+                                return buffer;
+                            })
+                            .subscribeOn(Schedulers.boundedElastic());
+                })
+                .onErrorMap(e -> new RuntimeException("Failed to stream attachment", e));
     }
 
     public Mono<GmailSendResponse> sendEmail(EmailSendRequest request) {
