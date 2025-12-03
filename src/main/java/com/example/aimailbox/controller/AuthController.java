@@ -7,6 +7,7 @@ import com.example.aimailbox.service.AuthService;
 import com.example.aimailbox.service.RefreshTokenService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @RestController
 @RequestMapping("/auth")
@@ -42,5 +43,20 @@ public class AuthController {
         String token = req.getRefreshToken();
         refreshTokenService.deleteByToken(token);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> me() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getPrincipal() == null || !(auth.getPrincipal() instanceof com.example.aimailbox.model.User)) {
+            return ResponseEntity.status(401).build();
+        }
+        com.example.aimailbox.model.User user = (com.example.aimailbox.model.User) auth.getPrincipal();
+        var body = java.util.Map.of(
+                "id", user.getId(),
+                "email", user.getEmail(),
+                "provider", user.getProvider()
+        );
+        return ResponseEntity.ok(body);
     }
 }

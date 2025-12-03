@@ -2,6 +2,7 @@ package com.example.aimailbox.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import java.time.Instant;
 
 @Entity
 @Table(name = "users")
@@ -21,5 +22,12 @@ public class User {
     private String password;
 
     private String provider;
+
+    // OAuth tokens for Google
+    private String googleAccessToken;
+    
+    private String googleRefreshToken;
+    
+    private Instant googleTokenExpiryTime;
 }
 
