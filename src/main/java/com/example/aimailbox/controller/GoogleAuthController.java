@@ -3,21 +3,30 @@ package com.example.aimailbox.controller;
 import com.example.aimailbox.dto.AuthResponse;
 import com.example.aimailbox.dto.GoogleRequest;
 import com.example.aimailbox.service.GoogleAuthService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+// Allow CORS from the frontend dev server so the SPA can POST the code
+@CrossOrigin(origins = "http://localhost:5174", allowedHeaders = "*", allowCredentials = "true",
+        methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.OPTIONS})
 @RestController
 public class GoogleAuthController {
 
     private static final Logger logger = LoggerFactory.getLogger(GoogleAuthController.class);
 
     private final GoogleAuthService googleAuthService;
+
+    // Frontend callback URL where the SPA will receive the code (default port 5174)
+    @Value("${frontend.callback-url:http://localhost:5174/auth/google/callback}")
+    private String frontendCallbackUrl;
 
     public GoogleAuthController(GoogleAuthService googleAuthService) {
         this.googleAuthService = googleAuthService;
@@ -46,11 +55,11 @@ public class GoogleAuthController {
     /**
      * Step 2: Google redirects back here with ?code=
      *
-     * Instead of redirecting to the frontend with tokens in the URL fragment or HTML,
-     * return the tokens as JSON so the frontend can consume them directly.
+     * Instead of exchanging code here, redirect to the frontend callback page so the SPA can
+     * read the code and call the backend POST /auth/google/code to complete the exchange.
      */
     @GetMapping("/auth/google/callback")
-    public ResponseEntity<AuthResponse> callback(
+    public ResponseEntity<Void> callback(
             @RequestParam String code,
             @RequestParam(required = false) String state
     ) {
@@ -59,19 +68,41 @@ public class GoogleAuthController {
         }
 
         try {
-            AuthResponse resp = googleAuthService.exchangeCodeForLogin(code);
-
-            logger.info(
-                    "Google callback successful for state={}, email={}",
-                    state,
-                    resp.getEmail()
-            );
-
-            // Return tokens and email as JSON body. Frontend should handle this response.
-            return ResponseEntity.ok(resp);
-
+            String target = frontendCallbackUrl + "?code=" + encodeURIComponent(code);
+            if (state != null && !state.isBlank()) {
+                target += "&state=" + encodeURIComponent(state);
+            }
+            URI uri = URI.create(target);
+            logger.info("Redirecting backend callback to frontend: {}", uri);
+            return ResponseEntity.status(HttpStatus.FOUND).location(uri).build();
         } catch (Exception e) {
-            logger.error("Failed to exchange code for tokens", e);
+            logger.error("Failed to redirect to frontend callback", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Frontend will POST the authorization code here after it receives it from Google redirect.
+     * Expects JSON body: { "code": "..." }
+     *
+     * Endpoint: POST /auth/google/callback
+     */
+    @PostMapping("/auth/google/callback")
+    public ResponseEntity<AuthResponse> exchangeCodeFromFrontend(@RequestBody Map<String, String> body) {
+        if (googleAuthService.isMisconfigured()) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+        String code = body != null ? body.get("code") : null;
+        if (code == null || code.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        try {
+            AuthResponse resp = googleAuthService.exchangeCodeForLogin(code);
+            logger.info("Exchanged code from frontend for email={}", resp.getEmail());
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            logger.error("Failed to exchange code from frontend", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
