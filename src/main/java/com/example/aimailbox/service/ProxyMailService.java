@@ -90,6 +90,7 @@ public class ProxyMailService {
         log.info("Fetching threads for user: {}, labelId: {}, query: {}, maxResults: {}, pageToken: {}", 
                 user.getEmail(), labelId, query, maxResults, pageToken);
         
+        String accessToken = getAccessToken();
         return gmailWebClient.get()
                 .uri(uriBuilder ->{
                     uriBuilder.path("/threads");
@@ -108,6 +109,7 @@ public class ProxyMailService {
                     uriBuilder.queryParam("includeSpamTrash",includeSpamTrash);
                     return uriBuilder.build();
                 })
+                .headers(h -> h.setBearerAuth(accessToken))
                 .retrieve()
                 .bodyToMono(ListThreadResponse.class)
                 .doOnSuccess(response -> log.info("Successfully fetched {} threads for user: {}, labelId: {}", 
@@ -124,12 +126,14 @@ public class ProxyMailService {
         User user = getAuthenticatedUser();
         log.info("Fetching thread details for threadId: {} by user: {}", id, user.getEmail());
         
+        String accessToken = getAccessToken();
         return gmailWebClient.get()
                 .uri(uriBuilder ->
                     uriBuilder.path("/threads/{id}")
                             .queryParam("format", "full")
                             .build(id)
                 )
+                .headers(h -> h.setBearerAuth(accessToken))
                 .retrieve()
                 .bodyToMono(ThreadDetail.class)
                 .doOnSuccess(thread -> log.info("Successfully fetched thread details for threadId: {} by user: {}, messageCount: {}", 
@@ -185,8 +189,10 @@ public class ProxyMailService {
         if (request.getRemoveLabelIds() != null) {
             payload.put("removeLabelIds", request.getRemoveLabelIds());
         }
+        String accessToken = getAccessToken();
         return gmailWebClient.post()
                 .uri("/threads/{id}/modify", request.getThreadId())
+                .headers(h -> h.setBearerAuth(accessToken))
                 .bodyValue(payload)
                 .retrieve()
                 .bodyToMono(String.class)
@@ -202,8 +208,10 @@ public class ProxyMailService {
         User user = getAuthenticatedUser();
         log.info("Deleting message {} by user: {}", messageId, user.getEmail());
         
+        String accessToken = getAccessToken();
         return gmailWebClient.delete()
                 .uri("/messages/{id}",messageId)
+                .headers(h -> h.setBearerAuth(accessToken))
                 .retrieve()
                 .bodyToMono(Void.class)
                 .doOnSuccess(response -> log.info("Successfully deleted message {} by user: {}", 
@@ -217,8 +225,10 @@ public class ProxyMailService {
         User user = getAuthenticatedUser();
         log.info("Deleting mail thread {} by user: {}", mailId, user.getEmail());
         
+        String accessToken = getAccessToken();
         return gmailWebClient.delete()
                 .uri("/threads/{id}",mailId)
+                .headers(h -> h.setBearerAuth(accessToken))
                 .retrieve()
                 .bodyToMono(Void.class)
                 .doOnSuccess(response -> log.info("Successfully deleted mail thread {} by user: {}", 
@@ -255,15 +265,18 @@ public class ProxyMailService {
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(payload -> gmailWebClient.post()
+                .flatMap(payload -> {
+                    String accessToken = getAccessToken();
+                    return gmailWebClient.post()
                         .uri("/messages/send")
+                        .headers(h -> h.setBearerAuth(accessToken))
                         .bodyValue(payload)
                         .retrieve()
                         .bodyToMono(GmailSendResponse.class)
                         .doOnSuccess(response -> log.debug("Gmail API call successful for user: {}, response: {}", 
                                 user.getEmail(), response != null ? response.getId() : "null"))
-                        .doOnError(error -> log.error("Gmail API call failed for user: {}", user.getEmail(), error))
-                );
+                        .doOnError(error -> log.error("Gmail API call failed for user: {}", user.getEmail(), error));
+                });
     }
 
     private ThreadDetailResponse parseListMessage(ThreadDetail threadDetail)
