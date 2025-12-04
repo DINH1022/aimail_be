@@ -29,52 +29,18 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-import com.example.aimailbox.model.User;
-import com.example.aimailbox.repository.UserRepository;
-import com.example.aimailbox.service.OAuthTokenService;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-
 @Service
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 @RequiredArgsConstructor
 public class ProxyMailService {
-    // token is resolved per-request from DB (current authenticated user)
+    String token = "";
     WebClient gmailWebClient;
-    UserRepository userRepository;
-    OAuthTokenService oauthTokenService;
-
-    // Resolve access token for current authenticated user (refreshes if needed)
-    private String getAccessToken() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            throw new RuntimeException("No authenticated user available to resolve access token");
-        }
-
-        Object principal = auth.getPrincipal();
-        User principalUser;
-        if (principal instanceof User) {
-            principalUser = (User) principal;
-        } else {
-            throw new RuntimeException("Unsupported principal type: " + principal.getClass().getName());
-        }
-
-        User dbUser = userRepository.findById(principalUser.getId())
-                .orElseThrow(() -> new RuntimeException("Authenticated user not found in database"));
-
-        // Ensure token is valid / refreshed if necessary
-        try {
-            return oauthTokenService.getValidAccessToken(dbUser);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to get valid access token for user", e);
-        }
-    }
 
     // Fetch all labels
     public Mono<List<LabelResponse>> getAllLabels() {
         return gmailWebClient.get()
                 .uri("/labels")
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .retrieve()
                 .bodyToMono(LabelWrapper.class)
                 .map(LabelWrapper::getLabels)
@@ -86,7 +52,7 @@ public class ProxyMailService {
     public Mono<LabelDetailResponse> getLabel(String id) {
         return gmailWebClient.get()
                 .uri("/labels/{id}", id)
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .retrieve()
                 .bodyToMono(LabelDetailResponse.class)
                 .defaultIfEmpty(new LabelDetailResponse())
@@ -95,7 +61,7 @@ public class ProxyMailService {
 
     // Fetch list of threads with optional parameters
     public Mono<ListThreadResponse> getListThreads(Integer maxResults, String pageToken, String query, String labelId,
-                                                   Boolean includeSpamTrash) {
+            Boolean includeSpamTrash) {
         return gmailWebClient.get()
                 .uri(uriBuilder -> {
                     uriBuilder.path("/threads");
@@ -114,7 +80,7 @@ public class ProxyMailService {
                     uriBuilder.queryParam("includeSpamTrash", includeSpamTrash);
                     return uriBuilder.build();
                 })
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .retrieve()
                 .bodyToMono(ListThreadResponse.class)
                 .defaultIfEmpty(new ListThreadResponse())
@@ -125,7 +91,7 @@ public class ProxyMailService {
     public Mono<ThreadDetailResponse> getThreadDetail(String id) {
         return gmailWebClient.get()
                 .uri("/threads/{id}", id)
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .retrieve()
                 .bodyToMono(Map.class)
                 .flatMap(rawMap -> {
@@ -148,7 +114,7 @@ public class ProxyMailService {
                             .uri(uriBuilder -> uriBuilder.path("/threads/{id}")
                                     .queryParam("format", "full")
                                     .build(id))
-                            .headers(header -> header.setBearerAuth(getAccessToken()))
+                            .headers(header -> header.setBearerAuth(token))
                             .retrieve()
                             .bodyToMono(ThreadDetail.class)
                             .map(fullThread -> {
@@ -161,7 +127,7 @@ public class ProxyMailService {
     public Mono<AttachmentResponse> getAttachment(String messageId, String attachmentId) {
         return gmailWebClient.get()
                 .uri("/messages/{messageId}/attachments/{attachmentId}", messageId, attachmentId)
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .retrieve()
                 .bodyToMono(AttachmentResponse.class)
                 .onErrorMap(e -> new RuntimeException("Failed to fetch attachment", e));
@@ -241,7 +207,7 @@ public class ProxyMailService {
         }
         return gmailWebClient.post()
                 .uri("/threads/{id}/modify", request.getThreadId())
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .bodyValue(payload)
                 .retrieve()
                 .bodyToMono(String.class)
@@ -252,7 +218,7 @@ public class ProxyMailService {
     public Mono<Void> deleteMessage(String messageId) {
         return gmailWebClient.delete()
                 .uri("/messages/{id}", messageId)
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .retrieve()
                 .bodyToMono(Void.class)
                 .onErrorMap(e -> new RuntimeException("Failed to delete message", e));
@@ -261,7 +227,7 @@ public class ProxyMailService {
     public Mono<Void> deleteMail(String mailId) {
         return gmailWebClient.delete()
                 .uri("/threads/{id}", mailId)
-                .headers(header -> header.setBearerAuth(getAccessToken()))
+                .headers(header -> header.setBearerAuth(token))
                 .retrieve()
                 .bodyToMono(Void.class)
                 .onErrorMap(e -> new RuntimeException("Failed to delete message", e));
@@ -270,28 +236,28 @@ public class ProxyMailService {
     private Mono<GmailSendResponse> sendToGmailApi(MimeMessage email, String threadId) {
         // 1. Đóng gói đoạn code Blocking vào Mono.fromCallable
         return Mono.fromCallable(() -> {
-                    try {
-                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                        email.writeTo(buffer);
-                        byte[] rawBytes = buffer.toByteArray();
-                        String encodedEmail = Base64.getUrlEncoder().encodeToString(rawBytes);
+            try {
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                email.writeTo(buffer);
+                byte[] rawBytes = buffer.toByteArray();
+                String encodedEmail = Base64.getUrlEncoder().encodeToString(rawBytes);
 
-                        Map<String, String> payload;
-                        if (threadId != null) {
-                            payload = Map.of("raw", encodedEmail, "threadId", threadId);
-                        } else {
-                            payload = Map.of("raw", encodedEmail);
-                        }
-                        return payload;
-                    } catch (Exception e) {
-                        // Ném lỗi ra để Mono xử lý
-                        throw new RuntimeException("Failed to create email payload", e);
-                    }
-                })
+                Map<String, String> payload;
+                if (threadId != null) {
+                    payload = Map.of("raw", encodedEmail, "threadId", threadId);
+                } else {
+                    payload = Map.of("raw", encodedEmail);
+                }
+                return payload;
+            } catch (Exception e) {
+                // Ném lỗi ra để Mono xử lý
+                throw new RuntimeException("Failed to create email payload", e);
+            }
+        })
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(payload -> gmailWebClient.post()
                         .uri("/messages/send")
-                        .headers(header -> header.setBearerAuth(getAccessToken()))
+                        .headers(header -> header.setBearerAuth(token))
                         .bodyValue(payload)
                         .retrieve()
                         .bodyToMono(GmailSendResponse.class));
@@ -465,4 +431,3 @@ public class ProxyMailService {
         return contentBodyPart;
     }
 }
-
