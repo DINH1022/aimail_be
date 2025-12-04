@@ -15,5 +15,4 @@ public class ThreadDetail {
     String snippet;
     List<String> labelIds;
     List<Message> messages;
-    List<String> labelIds;
 }
