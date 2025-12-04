@@ -47,7 +47,14 @@ public class ProxyMailService {
     // Added helper to get a valid access token for the authenticated user
     private String getAccessToken() {
         User user = getAuthenticatedUser();
-        return oAuthTokenService.getValidAccessToken(user);
+
+        try {
+            // Ensure user has saved OAuth tokens and refresh if needed
+            return oAuthTokenService.getValidAccessToken(user);
+        } catch (Exception e) {
+            log.warn("User {} does not have valid Google OAuth tokens: {}", user != null ? user.getEmail() : "unknown", e.getMessage());
+            throw new RuntimeException("Access denied. Your Google account may not have the necessary Gmail permissions. Please try signing out and signing in again to reauthorize.");
+        }
     }
 
     // Fetch all labels

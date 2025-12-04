@@ -154,76 +154,11 @@ public class GoogleAuthService {
     }
 
     public AuthResponse loginWithGoogle(GoogleRequest req) {
-        String idToken = req.getIdToken();
-
-        if (idToken == null || idToken.isBlank()) {
-            throw new RuntimeException("Missing Google ID token");
-        }
-        // Call Google's tokeninfo endpoint to validate the ID token and extract the email
-        GoogleTokenInfo info = googleOauthClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/tokeninfo").queryParam("id_token", idToken).build())
-                .retrieve()
-                .bodyToMono(GoogleTokenInfo.class)
-                .block();
-        if (info == null || info.getEmail() == null || info.getEmail().isBlank()) {
-            throw new RuntimeException("Invalid Google ID token");
-        }
-        // If a client ID is configured, validate the audience
-        if (!clientId.isBlank() && info.getAud() != null && !clientId.equals(info.getAud())) {
-            throw new RuntimeException("Google ID token audience does not match");
-        }
-        // If Google reports email_verified and it's false, reject
-        if (info.getEmailVerified() != null && !info.getEmailVerified().isEmpty()) {
-            boolean verified = Boolean.parseBoolean(info.getEmailVerified());
-            if (!verified) {
-                throw new RuntimeException("Google account email is not verified");
-            }
-        }
-
-        String email = info.getEmail();
-        User user = userRepository.findByEmail(email).orElseGet(() -> {
-            User u = User.builder()
-                    .email(email)
-                    .provider("google")
-                    .build();
-            return userRepository.save(u);
-        });
-        // Prefer validating an access token (if provided) to extract trustworthy scopes.
-        String derivedScope = "";
-        if (req.getAccessToken() != null && !req.getAccessToken().isBlank()) {
-            try {
-                GoogleTokenResponse accessInfo = googleOauthClient.get()
-                        .uri(uriBuilder -> uriBuilder.path("/tokeninfo").queryParam("access_token", req.getAccessToken()).build())
-                        .retrieve()
-                        .bodyToMono(GoogleTokenResponse.class)
-                        .block();
-                if (accessInfo != null && accessInfo.getScope() != null) {
-                    derivedScope = accessInfo.getScope();
-                }
-            } catch (Exception e) {
-                log.warn("Failed to validate client-provided access token for scopes, falling back to request scope", e);
-            }
-        }
-        // If no access token or validation failed, fall back to client-provided scope (not fully trusted)
-        if (derivedScope.isBlank() && req.getScope() != null) {
-            derivedScope = req.getScope();
-        }
-
-        // If we have scopes, include them in the JWT and validate Gmail permissions when present
-        if (!derivedScope.isBlank()) {
-            String scopes = derivedScope;
-            boolean hasGmailScope = scopes.contains("gmail.") || scopes.contains("mail.google.com") || scopes.contains("gmail/readonly") || scopes.contains("gmail.send") || scopes.contains("gmail.modify") || scopes.contains("gmail.compose");
-            if (!hasGmailScope) {
-                log.warn("Client-provided scopes do not include Gmail scopes: {}", scopes);
-                // We do not block login he
-                // re for ID-token flows; Gmail features will remain unavailable.
-            }
-        }
-
-        String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), derivedScope);
-        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
-        return new AuthResponse(accessToken, refreshToken.getToken(), user.getEmail());
-    }
+        // For security and to ensure the server can call Gmail, require the authorization-code flow
+        // This lets the server obtain and persist Google access + refresh tokens. ID-token-only flow
+        // does not provide a refresh token and cannot guarantee Gmail access.
+        throw new RuntimeException("ID-token-only login not supported. Please use the authorization-code flow (exchange code on the server) to grant Gmail permissions.");
+     }
 
     private static String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
