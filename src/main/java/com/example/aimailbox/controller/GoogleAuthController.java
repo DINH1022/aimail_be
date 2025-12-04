@@ -14,8 +14,8 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-// Allow CORS from the frontend dev server so the SPA can POST the code
-@CrossOrigin(origins = "http://localhost:5174", allowedHeaders = "*", allowCredentials = "true",
+// Allow CORS from the frontend dev server and deployed frontend so the SPA can POST the code
+@CrossOrigin(origins = {"https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app", "http://localhost:5174", "http://localhost:5173", "http://localhost:3000"}, allowedHeaders = "*", allowCredentials = "true",
         methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.OPTIONS})
 @RestController
 public class GoogleAuthController {
@@ -24,8 +24,8 @@ public class GoogleAuthController {
 
     private final GoogleAuthService googleAuthService;
 
-    // Frontend callback URL where the SPA will receive the code (default port 5174)
-    @Value("${frontend.callback-url:http://localhost:5174/auth/google/callback}")
+    // Frontend callback URL where the SPA will receive the code (default to deployed frontend)
+    @Value("${frontend.callback-url:https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app/auth/google/callback}")
     private String frontendCallbackUrl;
 
     public GoogleAuthController(GoogleAuthService googleAuthService) {

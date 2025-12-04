@@ -12,8 +12,13 @@ google:
   client-secret: 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
   redirect-uri: http://localhost:8080/auth/google/callback
 
+# Frontend callback URL used by backend to redirect user after Google auth
+frontend:
+  callback-url: https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app/auth/google/callback
+
 cors:
-  allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:3000
+  # include deployed Vercel frontend plus local dev origins
+  allowed-origins: https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app,http://localhost:5173,http://localhost:5174,http://localhost:3000
 
 datasource:
   url: jdbc:h2:mem:testdb

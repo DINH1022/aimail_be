@@ -15,7 +15,7 @@ public class CorsConfig {
     @Bean
     public CorsWebFilter corsWebFilter() {
         CorsConfiguration corsConfig = new CorsConfiguration();
-        corsConfig.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000"));
+        corsConfig.setAllowedOrigins(List.of("https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app", "http://localhost:5173", "http://localhost:3000"));
         corsConfig.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         corsConfig.setAllowedHeaders(Arrays.asList("*"));
         corsConfig.setExposedHeaders(Arrays.asList("Authorization", "Content-Disposition"));
