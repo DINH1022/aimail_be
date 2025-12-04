@@ -1,8 +1,8 @@
 package com.example.aimailbox.controller;
 
-import com.example.aimailbox.dto.AuthRequest;
-import com.example.aimailbox.dto.AuthResponse;
-import com.example.aimailbox.dto.RefreshRequest;
+import com.example.aimailbox.dto.request.AuthRequest;
+import com.example.aimailbox.dto.response.AuthResponse;
+import com.example.aimailbox.dto.request.RefreshRequest;
 import com.example.aimailbox.service.AuthService;
 import com.example.aimailbox.service.RefreshTokenService;
 import org.springframework.http.ResponseEntity;

@@ -1,9 +1,9 @@
 package com.example.aimailbox.service;
 
-import com.example.aimailbox.dto.AuthResponse;
-import com.example.aimailbox.dto.GoogleRequest;
+import com.example.aimailbox.dto.response.AuthResponse;
+import com.example.aimailbox.dto.request.GoogleRequest;
 import com.example.aimailbox.dto.GoogleTokenInfo;
-import com.example.aimailbox.dto.GoogleTokenResponse;
+import com.example.aimailbox.dto.response.GoogleTokenResponse;
 import com.example.aimailbox.model.RefreshToken;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.UserRepository;

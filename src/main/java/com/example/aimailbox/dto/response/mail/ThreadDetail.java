@@ -14,4 +14,5 @@ public class ThreadDetail {
     String id;
     String snippet;
     List<Message> messages;
+    List<String> labelIds;
 }

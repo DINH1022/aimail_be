@@ -1,7 +1,7 @@
 package com.example.aimailbox.controller;
 
-import com.example.aimailbox.dto.AuthResponse;
-import com.example.aimailbox.dto.GoogleRequest;
+import com.example.aimailbox.dto.response.AuthResponse;
+import com.example.aimailbox.dto.request.GoogleRequest;
 import com.example.aimailbox.service.GoogleAuthService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;

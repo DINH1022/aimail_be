@@ -1,7 +1,7 @@
 package com.example.aimailbox.service;
 
-import com.example.aimailbox.dto.AuthRequest;
-import com.example.aimailbox.dto.AuthResponse;
+import com.example.aimailbox.dto.request.AuthRequest;
+import com.example.aimailbox.dto.response.AuthResponse;
 import com.example.aimailbox.model.RefreshToken;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.UserRepository;

@@ -4,7 +4,6 @@ import com.example.aimailbox.dto.request.EmailSendRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
-import com.example.aimailbox.model.User;
 import com.example.aimailbox.wrapper.LabelWrapper;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
@@ -12,11 +11,13 @@ import jakarta.mail.internet.*;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -28,167 +29,209 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+import com.example.aimailbox.model.User;
+import com.example.aimailbox.repository.UserRepository;
+import com.example.aimailbox.service.OAuthTokenService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 @Service
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 @RequiredArgsConstructor
-@Slf4j
 public class ProxyMailService {
-    
+    // token is resolved per-request from DB (current authenticated user)
     WebClient gmailWebClient;
-    OAuthTokenService oAuthTokenService;
+    UserRepository userRepository;
+    OAuthTokenService oauthTokenService;
 
-    /**
-     * Get the authenticated user from security context
-     */
-    private User getAuthenticatedUser() {
-        return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-    }
-
-    // Added helper to get a valid access token for the authenticated user
+    // Resolve access token for current authenticated user (refreshes if needed)
     private String getAccessToken() {
-        User user = getAuthenticatedUser();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new RuntimeException("No authenticated user available to resolve access token");
+        }
 
+        Object principal = auth.getPrincipal();
+        User principalUser;
+        if (principal instanceof User) {
+            principalUser = (User) principal;
+        } else {
+            throw new RuntimeException("Unsupported principal type: " + principal.getClass().getName());
+        }
+
+        User dbUser = userRepository.findById(principalUser.getId())
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found in database"));
+
+        // Ensure token is valid / refreshed if necessary
         try {
-            // Ensure user has saved OAuth tokens and refresh if needed
-            return oAuthTokenService.getValidAccessToken(user);
+            return oauthTokenService.getValidAccessToken(dbUser);
         } catch (Exception e) {
-            log.warn("User {} does not have valid Google OAuth tokens: {}", user != null ? user.getEmail() : "unknown", e.getMessage());
-            throw new RuntimeException("Access denied. Your Google account may not have the necessary Gmail permissions. Please try signing out and signing in again to reauthorize.");
+            throw new RuntimeException("Failed to get valid access token for user", e);
         }
     }
 
     // Fetch all labels
     public Mono<List<LabelResponse>> getAllLabels() {
-        String accessToken = getAccessToken();
         return gmailWebClient.get()
                 .uri("/labels")
-                .headers(header ->header.setBearerAuth(accessToken))
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .retrieve()
                 .bodyToMono(LabelWrapper.class)
                 .map(LabelWrapper::getLabels)
                 .defaultIfEmpty(List.of())
-                .onErrorMap(e-> new RuntimeException("Failed to fetch labels",e));
+                .onErrorMap(e -> new RuntimeException("Failed to fetch labels", e));
     }
+
     // Fetch label details by ID
-    public Mono<LabelDetailResponse>  getLabel(String id) {
-        User user = getAuthenticatedUser();
-        log.info("Fetching label details for labelId: {} by user: {}", id, user.getEmail());
-        
-        String accessToken = getAccessToken();
+    public Mono<LabelDetailResponse> getLabel(String id) {
         return gmailWebClient.get()
-                .uri("/labels/{id}",id)
-                .headers(header ->header.setBearerAuth(accessToken))
+                .uri("/labels/{id}", id)
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .retrieve()
                 .bodyToMono(LabelDetailResponse.class)
-                .doOnSuccess(label -> log.info("Successfully fetched label details for labelId: {} by user: {}", 
-                    id, user.getEmail()))
-                .doOnError(error -> log.error("Failed to fetch label details for labelId: {} by user: {}", 
-                    id, user.getEmail(), error))
                 .defaultIfEmpty(new LabelDetailResponse())
-                .onErrorMap(e-> new RuntimeException("Failed to fetch label details",e));
+                .onErrorMap(e -> new RuntimeException("Failed to fetch label details", e));
     }
+
     // Fetch list of threads with optional parameters
-    public Mono<ListThreadResponse> getListThreads(Integer maxResults
-            , String pageToken
-            , String query
-            , String labelId
-            , Boolean includeSpamTrash) {
-        User user = getAuthenticatedUser();
-        log.info("Fetching threads for user: {}, labelId: {}, query: {}, maxResults: {}, pageToken: {}", 
-                user.getEmail(), labelId, query, maxResults, pageToken);
-        
-        String accessToken = getAccessToken();
+    public Mono<ListThreadResponse> getListThreads(Integer maxResults, String pageToken, String query, String labelId,
+                                                   Boolean includeSpamTrash) {
         return gmailWebClient.get()
-                .uri(uriBuilder ->{
+                .uri(uriBuilder -> {
                     uriBuilder.path("/threads");
-                    if(maxResults!=null){
-                        uriBuilder.queryParam("maxResults",maxResults);
+                    if (maxResults != null) {
+                        uriBuilder.queryParam("maxResults", maxResults);
                     }
-                    if(pageToken!=null && !pageToken.isEmpty()){
-                        uriBuilder.queryParam("pageToken",pageToken);
+                    if (pageToken != null && !pageToken.isEmpty()) {
+                        uriBuilder.queryParam("pageToken", pageToken);
                     }
-                    if(query!=null && !query.isEmpty()){
-                        uriBuilder.queryParam("q",query);
+                    if (query != null && !query.isEmpty()) {
+                        uriBuilder.queryParam("q", query);
                     }
-                    if(labelId!=null && !labelId.isEmpty()){
-                        uriBuilder.queryParam("labelIds",labelId);
+                    if (labelId != null && !labelId.isEmpty()) {
+                        uriBuilder.queryParam("labelIds", labelId);
                     }
-                    uriBuilder.queryParam("includeSpamTrash",includeSpamTrash);
+                    uriBuilder.queryParam("includeSpamTrash", includeSpamTrash);
                     return uriBuilder.build();
                 })
-                .headers(h -> h.setBearerAuth(accessToken))
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .retrieve()
                 .bodyToMono(ListThreadResponse.class)
-                .doOnSuccess(response -> log.info("Successfully fetched {} threads for user: {}, labelId: {}", 
-                    response != null && response.getThreads() != null ? response.getThreads().size() : 0, 
-                    user.getEmail(), labelId))
-                .doOnError(error -> log.error("Failed to fetch threads for user: {}, labelId: {}", 
-                    user.getEmail(), labelId, error))
                 .defaultIfEmpty(new ListThreadResponse())
-                .onErrorMap(e-> new RuntimeException("Failed to fetch messages",e));
+                .onErrorMap(e -> new RuntimeException("Failed to fetch messages", e));
     }
 
     // Fetch thread details by ID
     public Mono<ThreadDetailResponse> getThreadDetail(String id) {
-        User user = getAuthenticatedUser();
-        log.info("Fetching thread details for threadId: {} by user: {}", id, user.getEmail());
-        
-        String accessToken = getAccessToken();
         return gmailWebClient.get()
-                .uri(uriBuilder ->
-                    uriBuilder.path("/threads/{id}")
-                            .queryParam("format", "full")
-                            .build(id)
-                )
-                .headers(h -> h.setBearerAuth(accessToken))
+                .uri("/threads/{id}", id)
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .retrieve()
-                .bodyToMono(ThreadDetail.class)
-                .doOnSuccess(thread -> log.info("Successfully fetched thread details for threadId: {} by user: {}, messageCount: {}", 
-                    id, user.getEmail(), thread != null && thread.getMessages() != null ? thread.getMessages().size() : 0))
-                .doOnError(error -> log.error("Failed to fetch thread details for threadId: {} by user: {}", 
-                    id, user.getEmail(), error))
-                .map(this::parseListMessage);
+                .bodyToMono(Map.class)
+                .flatMap(rawMap -> {
+                    // Extract labelIds from first message
+                    List<String> labelIds = null;
+                    if (rawMap.containsKey("messages")) {
+                        List<Map<String, Object>> messages = (List<Map<String, Object>>) rawMap.get("messages");
+                        if (messages != null && !messages.isEmpty()) {
+                            Map<String, Object> firstMessage = messages.get(0);
+                            if (firstMessage.containsKey("labelIds")) {
+                                labelIds = (List<String>) firstMessage.get("labelIds");
+                            }
+                        }
+                    }
+
+                    final List<String> finalLabelIds = labelIds;
+
+                    // Get full thread with messages
+                    return gmailWebClient.get()
+                            .uri(uriBuilder -> uriBuilder.path("/threads/{id}")
+                                    .queryParam("format", "full")
+                                    .build(id))
+                            .headers(header -> header.setBearerAuth(getAccessToken()))
+                            .retrieve()
+                            .bodyToMono(ThreadDetail.class)
+                            .map(fullThread -> {
+                                fullThread.setLabelIds(finalLabelIds);
+                                return this.parseListMessage(fullThread);
+                            });
+                });
     }
-    public Mono<AttachmentResponse> getAttachment(String messageId,String attachmentId) {
-        User user = getAuthenticatedUser();
-        log.info("Fetching attachment {} for message {} by user: {}", attachmentId, messageId, user.getEmail());
-        
+
+    public Mono<AttachmentResponse> getAttachment(String messageId, String attachmentId) {
         return gmailWebClient.get()
-                .uri("/messages/{messageId}/attachments/{attachmentId}",messageId,attachmentId)
+                .uri("/messages/{messageId}/attachments/{attachmentId}", messageId, attachmentId)
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .retrieve()
                 .bodyToMono(AttachmentResponse.class)
-                .doOnSuccess(attachment -> log.info("Successfully fetched attachment {} for message {} by user: {}", 
-                    attachmentId, messageId, user.getEmail()))
-                .doOnError(error -> log.error("Failed to fetch attachment {} for message {} by user: {}", 
-                    attachmentId, messageId, user.getEmail(), error))
-                .onErrorMap(e-> new RuntimeException("Failed to fetch attachment",e));
+                .onErrorMap(e -> new RuntimeException("Failed to fetch attachment", e));
+    }
+
+    public byte[] getAttachmentBytes(String messageId, String attachmentId) {
+        try {
+            AttachmentResponse attachmentResponse = getAttachment(messageId, attachmentId).block();
+
+            if (attachmentResponse == null) {
+                throw new RuntimeException("Attachment response is null");
+            }
+
+            if (attachmentResponse.getData() == null || attachmentResponse.getData().isEmpty()) {
+                throw new RuntimeException("Attachment data is null or empty");
+            }
+            // Decode base64url data
+            byte[] decodedData = Base64.getUrlDecoder().decode(attachmentResponse.getData());
+
+            return decodedData;
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Invalid base64 data in attachment", e);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Failed to download attachment: " + e.getMessage(), e);
+        }
+    }
+
+    public Mono<Flux<DataBuffer>> streamAttachment(String messageId, String attachmentId) {
+        return getAttachment(messageId, attachmentId)
+                .map(attachmentResponse -> {
+                    byte[] decodedData = Base64.getUrlDecoder().decode(attachmentResponse.getData());
+                    DataBufferFactory bufferFactory = new DefaultDataBufferFactory();
+                    int chunkSize = 8192;
+
+                    return Flux.range(0, (decodedData.length + chunkSize - 1) / chunkSize)
+                            .map(chunkIndex -> {
+                                int start = chunkIndex * chunkSize;
+                                int end = Math.min(start + chunkSize, decodedData.length);
+                                int length = end - start;
+
+                                DataBuffer buffer = bufferFactory.allocateBuffer(length);
+                                buffer.write(decodedData, start, length);
+                                return buffer;
+                            })
+                            .subscribeOn(Schedulers.boundedElastic());
+                })
+                .onErrorMap(e -> new RuntimeException("Failed to stream attachment", e));
     }
 
     public Mono<GmailSendResponse> sendEmail(EmailSendRequest request) {
-        User user = getAuthenticatedUser();
-        log.info("Sending email from user: {} to: {}, subject: {}", 
-                user.getEmail(), request.getTo(), request.getSubject());
-        
-        if(request.getInReplyToMessageId()!=null && !request.getInReplyToMessageId().isEmpty()){
+        boolean hasRecipients = (request.getTo() != null && !request.getTo().isEmpty()) ||
+                (request.getCc() != null && !request.getCc().isEmpty()) ||
+                (request.getBcc() != null && !request.getBcc().isEmpty());
+
+        if (!hasRecipients) {
+            return Mono
+                    .error(new IllegalArgumentException("At least one recipient (To, Cc, or Bcc) must be specified"));
+        }
+
+        if (request.getInReplyToMessageId() != null && !request.getInReplyToMessageId().isEmpty()) {
             String subject = request.getSubject();
             String replySubject = subject.startsWith("Re:") ? subject : "Re: " + subject;
             request.setSubject(replySubject);
-            log.debug("Email is a reply, modified subject to: {}", replySubject);
         }
         return Mono.fromCallable(() -> createMimeMessage(request))
-                .doOnSuccess(mimeMessage -> log.debug("Successfully created MIME message for user: {}", user.getEmail()))
-                .doOnError(error -> log.error("Failed to create MIME message for user: {}", user.getEmail(), error))
-                .flatMap(email -> sendToGmailApi(email, request.getThreadId()))
-                .doOnSuccess(response -> log.info("Successfully sent email from user: {} to: {}, messageId: {}", 
-                        user.getEmail(), request.getTo(), response != null ? response.getId() : "unknown"))
-                .doOnError(error -> log.error("Failed to send email from user: {} to: {}", 
-                        user.getEmail(), request.getTo(), error));
+                .flatMap(email -> sendToGmailApi(email, request.getThreadId()));
     }
+
     public Mono<String> modifyMessageLabels(ModifyEmailRequest request) {
-        User user = getAuthenticatedUser();
-        log.info("Modifying labels for thread {} by user: {}, adding: {}, removing: {}", 
-                request.getThreadId(), user.getEmail(), request.getAddLabelIds(), request.getRemoveLabelIds());
-        
         Map<String, Object> payload = new HashMap<>();
         if (request.getAddLabelIds() != null) {
             payload.put("addLabelIds", request.getAddLabelIds());
@@ -196,58 +239,35 @@ public class ProxyMailService {
         if (request.getRemoveLabelIds() != null) {
             payload.put("removeLabelIds", request.getRemoveLabelIds());
         }
-        String accessToken = getAccessToken();
         return gmailWebClient.post()
                 .uri("/threads/{id}/modify", request.getThreadId())
-                .headers(h -> h.setBearerAuth(accessToken))
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .bodyValue(payload)
                 .retrieve()
                 .bodyToMono(String.class)
-                .doOnSuccess(response -> log.info("Successfully modified labels for thread {} by user: {}", 
-                        request.getThreadId(), user.getEmail()))
-                .doOnError(error -> log.error("Failed to modify labels for thread {} by user: {}", 
-                        request.getThreadId(), user.getEmail(), error))
                 .map(response -> "Labels modified successfully")
                 .onErrorMap(e -> new RuntimeException("Failed to modify message labels", e));
     }
-    public Mono<Void> deleteMessage(String messageId)
-    {
-        User user = getAuthenticatedUser();
-        log.info("Deleting message {} by user: {}", messageId, user.getEmail());
-        
-        String accessToken = getAccessToken();
+
+    public Mono<Void> deleteMessage(String messageId) {
         return gmailWebClient.delete()
-                .uri("/messages/{id}",messageId)
-                .headers(h -> h.setBearerAuth(accessToken))
+                .uri("/messages/{id}", messageId)
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .retrieve()
                 .bodyToMono(Void.class)
-                .doOnSuccess(response -> log.info("Successfully deleted message {} by user: {}", 
-                        messageId, user.getEmail()))
-                .doOnError(error -> log.error("Failed to delete message {} by user: {}", 
-                        messageId, user.getEmail(), error))
-                .onErrorMap(e-> new RuntimeException("Failed to delete message",e));
+                .onErrorMap(e -> new RuntimeException("Failed to delete message", e));
     }
-    public Mono<Void> deleteMail(String mailId)
-    {
-        User user = getAuthenticatedUser();
-        log.info("Deleting mail thread {} by user: {}", mailId, user.getEmail());
-        
-        String accessToken = getAccessToken();
+
+    public Mono<Void> deleteMail(String mailId) {
         return gmailWebClient.delete()
-                .uri("/threads/{id}",mailId)
-                .headers(h -> h.setBearerAuth(accessToken))
+                .uri("/threads/{id}", mailId)
+                .headers(header -> header.setBearerAuth(getAccessToken()))
                 .retrieve()
                 .bodyToMono(Void.class)
-                .doOnSuccess(response -> log.info("Successfully deleted mail thread {} by user: {}", 
-                        mailId, user.getEmail()))
-                .doOnError(error -> log.error("Failed to delete mail thread {} by user: {}", 
-                        mailId, user.getEmail(), error))
-                .onErrorMap(e-> new RuntimeException("Failed to delete message",e));
+                .onErrorMap(e -> new RuntimeException("Failed to delete message", e));
     }
+
     private Mono<GmailSendResponse> sendToGmailApi(MimeMessage email, String threadId) {
-        User user = getAuthenticatedUser();
-        log.debug("Preparing to send email to Gmail API for user: {}, threadId: {}", user.getEmail(), threadId);
-        
         // 1. Đóng gói đoạn code Blocking vào Mono.fromCallable
         return Mono.fromCallable(() -> {
                     try {
@@ -259,80 +279,57 @@ public class ProxyMailService {
                         Map<String, String> payload;
                         if (threadId != null) {
                             payload = Map.of("raw", encodedEmail, "threadId", threadId);
-                            log.debug("Created email payload with threadId: {} for user: {}", threadId, user.getEmail());
                         } else {
                             payload = Map.of("raw", encodedEmail);
-                            log.debug("Created email payload without threadId for user: {}", user.getEmail());
                         }
                         return payload;
                     } catch (Exception e) {
-                        log.error("Failed to create email payload for user: {}", user.getEmail(), e);
                         // Ném lỗi ra để Mono xử lý
                         throw new RuntimeException("Failed to create email payload", e);
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(payload -> {
-                    String accessToken = getAccessToken();
-                    return gmailWebClient.post()
+                .flatMap(payload -> gmailWebClient.post()
                         .uri("/messages/send")
-                        .headers(h -> h.setBearerAuth(accessToken))
+                        .headers(header -> header.setBearerAuth(getAccessToken()))
                         .bodyValue(payload)
                         .retrieve()
-                        .bodyToMono(GmailSendResponse.class)
-                        .doOnSuccess(response -> log.debug("Gmail API call successful for user: {}, response: {}", 
-                                user.getEmail(), response != null ? response.getId() : "null"))
-                        .doOnError(error -> log.error("Gmail API call failed for user: {}", user.getEmail(), error));
-                });
+                        .bodyToMono(GmailSendResponse.class));
     }
 
-    private ThreadDetailResponse parseListMessage(ThreadDetail threadDetail)
-    {
-        User user = getAuthenticatedUser();
-        log.debug("Parsing thread detail for threadId: {} by user: {}", 
-                threadDetail != null ? threadDetail.getId() : "null", user.getEmail());
-        
+    private ThreadDetailResponse parseListMessage(ThreadDetail threadDetail) {
         ThreadDetailResponse threadDetailResponse = ThreadDetailResponse.builder()
                 .id(threadDetail.getId())
                 .snippet(threadDetail.getSnippet())
+                .labelIds(threadDetail.getLabelIds())
                 .messages(new ArrayList<>())
                 .build();
-        if(threadDetail.getMessages()!=null)
-        {
-            log.debug("Parsing {} messages for thread {} by user: {}", 
-                    threadDetail.getMessages().size(), threadDetail.getId(), user.getEmail());
-            
-            threadDetail.getMessages().forEach(message -> {
+        if (threadDetail.getMessages() != null) {
+            for (Message message : threadDetail.getMessages()) {
                 MessageDetailResponse messageDetailResponse = parseMessage(message);
                 threadDetailResponse.getMessages().add(messageDetailResponse);
-            });
-            
-            log.debug("Successfully parsed thread detail for threadId: {} with {} messages by user: {}", 
-                    threadDetail.getId(), threadDetailResponse.getMessages().size(), user.getEmail());
-        } else {
-            log.warn("No messages found in thread {} for user: {}", threadDetail.getId(), user.getEmail());
+            }
         }
         return threadDetailResponse;
     }
 
-    private MessageDetailResponse parseMessage(Message message)
-    {
+    private MessageDetailResponse parseMessage(Message message) {
         MessageDetailResponse messageDetailResponse = MessageDetailResponse.builder()
                 .id(message.getId())
                 .threadId(message.getThreadId())
                 .snippet(message.getSnippet())
                 .attachments(new ArrayList<>())
                 .build();
-        if(message.getPayload()!=null)
-        {
+        if (message.getPayload() != null) {
             List<MessagePartHeader> headers = message.getPayload().getHeaders();
-            messageDetailResponse.setMessageId(getHeader(headers,"Message-ID"));
+            messageDetailResponse.setMessageId(getHeader(headers, "Message-ID"));
             messageDetailResponse.setFrom(getHeader(headers, "From"));
             messageDetailResponse.setTo(getHeader(headers, "To"));
+            messageDetailResponse.setCc(getHeader(headers, "Cc"));
+            messageDetailResponse.setBcc(getHeader(headers, "Bcc"));
             messageDetailResponse.setSubject(getHeader(headers, "Subject"));
             String dateStr = getHeader(headers, "Date");
-            if(dateStr!=null && !dateStr.isEmpty())
-            {
+            if (dateStr != null && !dateStr.isEmpty()) {
                 try {
                     Instant instant = Instant.from(DateTimeFormatter.RFC_1123_DATE_TIME.parse(dateStr));
                     messageDetailResponse.setDate(instant.atOffset(ZoneOffset.UTC).toString());
@@ -345,21 +342,19 @@ public class ProxyMailService {
         return messageDetailResponse;
     }
 
-    private void traverseParts (MessagePart part, MessageDetailResponse messageDetailResponse){
-        if (part == null) return;
-        if(part.getBody()!=null&&part.getBody().getData()!=null)
-        {
+    private void traverseParts(MessagePart part, MessageDetailResponse messageDetailResponse) {
+        if (part == null)
+            return;
+        if (part.getBody() != null && part.getBody().getData() != null) {
             String decoded = decodeBase64UrlSafe(part.getBody().getData());
-            switch (part.getMimeType().toLowerCase()){
+            switch (part.getMimeType().toLowerCase()) {
                 case "text/plain":
-                    if(messageDetailResponse.getTextBody()==null)
-                    {
+                    if (messageDetailResponse.getTextBody() == null) {
                         messageDetailResponse.setTextBody(decoded);
                     }
                     break;
                 case "text/html":
-                    if(messageDetailResponse.getHtmlBody()==null)
-                    {
+                    if (messageDetailResponse.getHtmlBody() == null) {
                         messageDetailResponse.setHtmlBody(decoded);
                     }
                     break;
@@ -369,8 +364,7 @@ public class ProxyMailService {
             messageDetailResponse.getAttachments().add(new Attachment(
                     part.getFilename(),
                     part.getMimeType(),
-                    part.getBody() != null ? part.getBody().getAttachmentId() : null
-            ));
+                    part.getBody() != null ? part.getBody().getAttachmentId() : null));
         }
         if (part.getParts() != null) {
             for (MessagePart child : part.getParts()) {
@@ -378,55 +372,75 @@ public class ProxyMailService {
             }
         }
     }
-    private String getHeader(List<MessagePartHeader> headers,String name)
-    {
-        if(headers == null) return null;
+
+    private String getHeader(List<MessagePartHeader> headers, String name) {
+        if (headers == null)
+            return null;
         for (MessagePartHeader h : headers) {
-            if (name.equalsIgnoreCase(h.getName())) return h.getValue();
+            if (name.equalsIgnoreCase(h.getName()))
+                return h.getValue();
         }
         return null;
     }
+
     private String decodeBase64UrlSafe(String data) {
-        if (data == null) return null;
+        if (data == null)
+            return null;
         byte[] decoded = Base64.getUrlDecoder().decode(data);
         return new String(decoded, StandardCharsets.UTF_8);
     }
+
     private MimeMessage createMimeMessage(EmailSendRequest request) throws MessagingException, IOException {
         Session session = Session.getDefaultInstance(new Properties(), null);
         MimeMessage email = new MimeMessage(session);
         email.setFrom(new InternetAddress("me"));
-        if(request.getTo()!=null && !request.getTo().isEmpty())
-        {
-            email.addRecipients(jakarta.mail.Message.RecipientType.TO,InternetAddress.parse(request.getTo()));
+        if (request.getTo() != null && !request.getTo().isEmpty()) {
+            email.addRecipients(jakarta.mail.Message.RecipientType.TO, InternetAddress.parse(request.getTo()));
         }
-        if(request.getBcc()!=null && !request.getBcc().isEmpty())
-        {
-            email.addRecipients(jakarta.mail.Message.RecipientType.BCC,InternetAddress.parse(request.getBcc()));
+        if (request.getBcc() != null && !request.getBcc().isEmpty()) {
+            email.addRecipients(jakarta.mail.Message.RecipientType.BCC, InternetAddress.parse(request.getBcc()));
         }
-        if(request.getCc()!=null && !request.getCc().isEmpty())
-        {
-            email.addRecipients(jakarta.mail.Message.RecipientType.CC,InternetAddress.parse(request.getCc()));
+        if (request.getCc() != null && !request.getCc().isEmpty()) {
+            email.addRecipients(jakarta.mail.Message.RecipientType.CC, InternetAddress.parse(request.getCc()));
         }
-        email.setSubject(request.getSubject(),"UTF-8");
-        if(request.getInReplyToMessageId()!=null&& !request.getInReplyToMessageId().isEmpty())
-        {
-            email.setHeader("In-Reply-To",request.getInReplyToMessageId());
-            email.setHeader("References",request.getInReplyToMessageId());
+        email.setSubject(request.getSubject(), "UTF-8");
+        if (request.getInReplyToMessageId() != null && !request.getInReplyToMessageId().isEmpty()) {
+            email.setHeader("In-Reply-To", request.getInReplyToMessageId());
+            email.setHeader("References", request.getInReplyToMessageId());
         }
 
         MimeMultipart rootMultipart = new MimeMultipart("mixed");
         MimeBodyPart contentBodyPart = getMimeBodyPart(request);
         rootMultipart.addBodyPart(contentBodyPart);
-        if(request.getAttachment() != null)
-        {
-            for(MultipartFile file:request.getAttachment())
-            {
-                if(file.isEmpty()) continue;
-                MimeBodyPart attachmentPart = new MimeBodyPart();
-                String fileName = file.getOriginalFilename();
-                attachmentPart.setFileName(fileName);
-                attachmentPart.setContent(file.getBytes(), file.getContentType());
-                rootMultipart.addBodyPart(attachmentPart);
+        if (request.getAttachment() != null) {
+            for (MultipartFile file : request.getAttachment()) {
+                if (file == null || file.isEmpty())
+                    continue;
+                try {
+                    MimeBodyPart attachmentPart = new MimeBodyPart();
+                    String fileName = file.getOriginalFilename();
+
+                    try {
+                        jakarta.activation.DataSource ds = new jakarta.mail.util.ByteArrayDataSource(file.getBytes(),
+                                file.getContentType() != null ? file.getContentType() : "application/octet-stream");
+                        attachmentPart.setDataHandler(new jakarta.activation.DataHandler(ds));
+                    } catch (Exception ex) {
+                        attachmentPart.setContent(file.getBytes(),
+                                file.getContentType() != null ? file.getContentType() : "application/octet-stream");
+                    }
+
+                    if (fileName != null) {
+                        try {
+                            attachmentPart.setFileName(MimeUtility.encodeText(fileName, "UTF-8", null));
+                        } catch (Exception e) {
+                            attachmentPart.setFileName(fileName);
+                        }
+                    }
+                    attachmentPart.setDisposition(jakarta.mail.Part.ATTACHMENT);
+                    rootMultipart.addBodyPart(attachmentPart);
+                } catch (Exception e) {
+                    throw new IOException("Failed to attach file " + file.getOriginalFilename(), e);
+                }
             }
         }
         email.setContent(rootMultipart);
@@ -451,3 +465,4 @@ public class ProxyMailService {
         return contentBodyPart;
     }
 }
+

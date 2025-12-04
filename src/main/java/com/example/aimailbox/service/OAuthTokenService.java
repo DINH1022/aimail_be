@@ -1,6 +1,6 @@
 package com.example.aimailbox.service;
 
-import com.example.aimailbox.dto.GoogleTokenResponse;
+import com.example.aimailbox.dto.response.GoogleTokenResponse;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
