@@ -34,7 +34,6 @@ public class OAuthTokenService {
     @Value("${google.redirect-uri:}")
     private String redirectUri;
 
-    /** Reactive method to get valid access token (refresh if expired) */
     public Mono<String> getValidAccessTokenReactive(User user) {
         if (user.getGoogleAccessToken() == null) {
             return Mono.error(new RuntimeException("No Google access token for user"));
@@ -55,7 +54,6 @@ public class OAuthTokenService {
         return Mono.just(user.getGoogleAccessToken());
     }
 
-    /** Reactive refresh token call */
     public Mono<GoogleTokenResponse> refreshAccessTokenReactive(String refreshToken) {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("client_id", clientId);
@@ -77,7 +75,6 @@ public class OAuthTokenService {
                 .doOnError(e -> log.error("Failed to refresh access token", e));
     }
 
-    /** Save tokens to user */
     public void saveTokensToUser(User user, GoogleTokenResponse tokenResponse) {
         user.setGoogleAccessToken(tokenResponse.getAccessToken());
         if (tokenResponse.getRefreshToken() != null) {
@@ -90,9 +87,6 @@ public class OAuthTokenService {
         log.info("Saved refreshed tokens for user {}", user.getEmail());
     }
 
-    /**
-     * Blocking exchange: authorization code -> tokens (used by GoogleAuthService)
-     */
     public GoogleTokenResponse exchangeCodeForTokens(String authorizationCode) {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("client_id", clientId);
@@ -116,9 +110,6 @@ public class OAuthTokenService {
                 .block();
     }
 
-    /**
-     * Blocking refresh used by non-reactive callers
-     */
     public GoogleTokenResponse refreshAccessToken(String refreshToken) {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("client_id", clientId);
@@ -141,9 +132,6 @@ public class OAuthTokenService {
                 .block();
     }
 
-    /**
-     * Get valid access token for user (blocking). Refreshes if expired.
-     */
     public String getValidAccessToken(User user) {
         if (user.getGoogleAccessToken() == null) {
             throw new RuntimeException("No Google access token available for user");
@@ -169,13 +157,11 @@ public class OAuthTokenService {
         return user.getGoogleAccessToken();
     }
 
-    /** Check if user has valid tokens */
     public boolean hasValidTokens(User user) {
         return user.getGoogleAccessToken() != null &&
                 (user.getGoogleTokenExpiryTime() == null || user.getGoogleTokenExpiryTime().isAfter(Instant.now()));
     }
 
-    /** Revoke tokens and clear DB */
     public void revokeTokens(User user) {
         if (user.getGoogleAccessToken() != null) {
             try {
@@ -201,19 +187,16 @@ public class OAuthTokenService {
         userRepository.save(user);
     }
 
-    /**
-     * Get user by ID and ensure tokens are refreshed if needed
-     */
     public Optional<User> getUserWithValidTokens(Long userId) {
         Optional<User> userOpt = userRepository.findById(userId);
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             try {
-                getValidAccessToken(user); // may refresh and save
+                getValidAccessToken(user);
                 return Optional.of(userRepository.findById(userId).orElse(user));
             } catch (Exception e) {
                 log.error("Failed to get valid tokens for user {}", userId, e);
-                return userOpt; // return user even if refresh failed
+                return userOpt;
             }
         }
         return Optional.empty();

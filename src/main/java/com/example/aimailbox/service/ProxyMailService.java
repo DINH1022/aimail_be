@@ -41,7 +41,6 @@ public class ProxyMailService {
     final WebClient gmailWebClient;
     final OAuthTokenService oAuthTokenService;
 
-    // Fetch all labels
     public Mono<List<LabelResponse>> getAllLabels() {
         return gmailWebClient.get()
                 .uri("/labels")
@@ -52,7 +51,6 @@ public class ProxyMailService {
                 .onErrorMap(e -> new RuntimeException("Failed to fetch labels", e));
     }
 
-    // Fetch label details by ID
     public Mono<LabelDetailResponse> getLabel(String id) {
         return gmailWebClient.get()
                 .uri("/labels/{id}", id)
@@ -62,7 +60,6 @@ public class ProxyMailService {
                 .onErrorMap(e -> new RuntimeException("Failed to fetch label details", e));
     }
 
-    // Fetch list of threads with optional parameters
     public Mono<ListThreadResponse> getListThreads(Integer maxResults, String pageToken, String query, String labelId,
             Boolean includeSpamTrash) {
         return gmailWebClient.get()
@@ -89,7 +86,6 @@ public class ProxyMailService {
                 .onErrorMap(e -> new RuntimeException("Failed to fetch messages", e));
     }
 
-    // Fetch thread details by ID
     public Mono<ThreadDetailResponse> getThreadDetail(String id) {
         return gmailWebClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/threads/{id}")
@@ -120,7 +116,6 @@ public class ProxyMailService {
             if (attachmentResponse.getData() == null || attachmentResponse.getData().isEmpty()) {
                 throw new RuntimeException("Attachment data is null or empty");
             }
-            // Decode base64url data
             byte[] decodedData = Base64.getUrlDecoder().decode(attachmentResponse.getData());
 
             return decodedData;
@@ -207,7 +202,6 @@ public class ProxyMailService {
     }
 
     private Mono<GmailSendResponse> sendToGmailApi(MimeMessage email, String threadId) {
-        // 1. Đóng gói đoạn code Blocking vào Mono.fromCallable
         return Mono.fromCallable(() -> {
             try {
                 ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -223,7 +217,6 @@ public class ProxyMailService {
                 }
                 return payload;
             } catch (Exception e) {
-                // Ném lỗi ra để Mono xử lý
                 throw new RuntimeException("Failed to create email payload", e);
             }
         })

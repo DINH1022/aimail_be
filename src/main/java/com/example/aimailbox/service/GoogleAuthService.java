@@ -29,7 +29,6 @@ public class GoogleAuthService {
     private final String clientId;
     private final String redirectUri;
 
-    // dependencies for loginWithGoogle
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
     private final JwtUtil jwtUtil;
@@ -73,16 +72,12 @@ public class GoogleAuthService {
         return URI.create(sb.toString());
     }
 
-
     public AuthResponse exchangeCodeForLogin(String authorizationCode) {
         try {
-            // Exchange code for tokens
             GoogleTokenResponse tokenResponse = oAuthTokenService.exchangeCodeForTokens(authorizationCode);
 
-            // Log scopes returned by token endpoint for debugging
             log.info("Token response scopes: {}", tokenResponse.getScope());
 
-            // Ensure token has Gmail permissions we need
             String scopes = tokenResponse.getScope() == null ? "" : tokenResponse.getScope();
             boolean hasGmailScope = scopes.contains("gmail.") || scopes.contains("mail.google.com") || scopes.contains("gmail/readonly") || scopes.contains("gmail.send") || scopes.contains("gmail.modify") || scopes.contains("gmail.compose");
             if (!hasGmailScope) {
@@ -90,7 +85,6 @@ public class GoogleAuthService {
                 throw new RuntimeException("Access denied: Google did not grant Gmail permissions. Please reauthorize and approve Gmail scopes.");
             }
 
-            // Get user info from ID token
             GoogleTokenInfo userInfo = googleOauthClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/tokeninfo")
                             .queryParam("id_token", tokenResponse.getIdToken()).build())
@@ -102,12 +96,10 @@ public class GoogleAuthService {
                 throw new RuntimeException("Invalid Google ID token");
             }
 
-            // Validate audience if configured
             if (!clientId.isBlank() && userInfo.getAud() != null && !clientId.equals(userInfo.getAud())) {
                 throw new RuntimeException("Google ID token audience does not match");
             }
 
-            // Check email verification
             if (userInfo.getEmailVerified() != null && !userInfo.getEmailVerified().isEmpty()) {
                 boolean verified = Boolean.parseBoolean(userInfo.getEmailVerified());
                 if (!verified) {
@@ -116,8 +108,7 @@ public class GoogleAuthService {
             }
 
             String email = userInfo.getEmail();
-            
-            // Find or create user (handle race condition on unique email)
+
             Optional<User> existingOpt = userRepository.findByEmail(email);
             User user;
             if (existingOpt.isPresent()) {
@@ -130,20 +121,17 @@ public class GoogleAuthService {
                             .build();
                     user = userRepository.save(u);
                 } catch (DataIntegrityViolationException dive) {
-                    // Another request created the user concurrently. Refetch.
                     log.warn("Concurrent create detected for email {}, refetching user", email);
                     user = userRepository.findByEmail(email)
                             .orElseThrow(() -> new RuntimeException("Failed to create or find user after concurrent insert"));
                 }
             }
 
-            // Save OAuth tokens to user
             oAuthTokenService.saveTokensToUser(user, tokenResponse);
 
-            // Generate JWT tokens (include oauth scopes from token response)
             String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail(), tokenResponse.getScope());
             RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
-            
+
             log.info("Successfully logged in user via Google OAuth: {}", email);
             return new AuthResponse(accessToken, refreshToken.getToken(), user.getEmail());
 
@@ -154,9 +142,6 @@ public class GoogleAuthService {
     }
 
     public AuthResponse loginWithGoogle(GoogleRequest req) {
-        // For security and to ensure the server can call Gmail, require the authorization-code flow
-        // This lets the server obtain and persist Google access + refresh tokens. ID-token-only flow
-        // does not provide a refresh token and cannot guarantee Gmail access.
         throw new RuntimeException("ID-token-only login not supported. Please use the authorization-code flow (exchange code on the server) to grant Gmail permissions.");
      }
 
