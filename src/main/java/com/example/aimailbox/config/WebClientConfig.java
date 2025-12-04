@@ -6,11 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import reactor.core.publisher.Mono;
 
 @Configuration
@@ -18,9 +20,12 @@ import reactor.core.publisher.Mono;
 public class WebClientConfig {
 
     @Bean
-    public WebClient gmailWebClient(WebClient.Builder builder, OAuthTokenService oAuthTokenService){
+    public WebClient gmailWebClient(WebClient.Builder builder, OAuthTokenService oAuthTokenService) {
         return builder
                 .baseUrl("https://gmail.googleapis.com/gmail/v1/users/me")
+                .exchangeStrategies(ExchangeStrategies.builder()
+                        .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                        .build())
                 .filter(authorizationHeaderFilter(oAuthTokenService))
                 .filter(tokenRefreshFilter(oAuthTokenService))
                 .build();
@@ -33,51 +38,67 @@ public class WebClientConfig {
                 .build();
     }
 
-    /**
-     * Exchange filter function to automatically refresh tokens on 401 responses
-     */
-    private ExchangeFilterFunction tokenRefreshFilter(OAuthTokenService oAuthTokenService) {
-        return ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
-            if (clientResponse.statusCode() == HttpStatus.UNAUTHORIZED) {
-                // Token might be expired, try to refresh
-                try {
-                    User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-                    if (user != null) {
-                        log.warn("Received 401 for user {}, attempting to refresh token", user.getEmail());
-                        // Force refresh the token
-                        String newToken = oAuthTokenService.getValidAccessToken(user);
-                        log.info("Token refreshed successfully for user {}", user.getEmail());
-                        
-                        // You might want to retry the original request here with the new token
-                        // For now, we'll just log and let the response flow through
-                    }
-                } catch (Exception e) {
-                    log.error("Failed to refresh token on 401 response", e);
-                }
-            }
-            return Mono.just(clientResponse);
-        });
-    }
-
-    /**
-     * Request filter to add authorization header automatically
-     */
+    /** Add Authorization header using servlet SecurityContextHolder (works in servlet MVC controllers) */
     @Bean
     public ExchangeFilterFunction authorizationHeaderFilter(OAuthTokenService oAuthTokenService) {
-        return ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
-            try {
-                User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-                if (user != null) {
-                    String accessToken = oAuthTokenService.getValidAccessToken(user);
-                    ClientRequest authorizedRequest = ClientRequest.from(clientRequest)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .build();
-                    return Mono.just(authorizedRequest);
-                }
-            } catch (Exception e) {
-                log.error("Failed to add authorization header", e);
-            }
-            return Mono.just(clientRequest);
-        });
+        return ExchangeFilterFunction.ofRequestProcessor(request ->
+                Mono.fromCallable(() -> SecurityContextHolder.getContext())
+                        .flatMap(ctx -> {
+                            Authentication auth = ctx.getAuthentication();
+                            if (auth != null && auth.getPrincipal() instanceof User user) {
+                                return oAuthTokenService.getValidAccessTokenReactive(user)
+                                        .map(token -> ClientRequest.from(request)
+                                                .header("Authorization", "Bearer " + token)
+                                                .build());
+                            }
+                            return Mono.just(request);
+                        })
+                        .defaultIfEmpty(request)
+                        .onErrorResume(e -> {
+                            log.error("Failed to add authorization header", e);
+                            return Mono.just(request);
+                        })
+        );
+    }
+
+    /** Retry request once if 401 Unauthorized */
+    private ExchangeFilterFunction tokenRefreshFilter(OAuthTokenService oAuthTokenService) {
+        return (request, next) ->
+                next.exchange(request)
+                        .flatMap(response -> {
+                            if (response.statusCode() != HttpStatus.UNAUTHORIZED) {
+                                return Mono.just(response);
+                            }
+                            return Mono.fromCallable(() -> SecurityContextHolder.getContext())
+                                    .flatMap(ctx -> {
+                                        Authentication auth = ctx.getAuthentication();
+                                        if (auth != null && auth.getPrincipal() instanceof User user) {
+                                            log.warn("Received 401 for user {}, refreshing token", user.getEmail());
+                                            return oAuthTokenService.getValidAccessTokenReactive(user)
+                                                    .flatMap(newToken -> {
+                                                        ClientRequest retryReq = ClientRequest.from(request)
+                                                                .header("Authorization", "Bearer " + newToken)
+                                                                .build();
+                                                        log.info("Retrying request {} with refreshed token", request.url());
+                                                        return next.exchange(retryReq)
+                                                                .flatMap(resp -> {
+                                                                    if (resp.statusCode().isError()) {
+                                                                        return resp.bodyToMono(String.class)
+                                                                                .defaultIfEmpty("")
+                                                                                .doOnNext(body -> log.warn("Retry failed: status={} body={}", resp.statusCode(), body))
+                                                                                .thenReturn(resp);
+                                                                    }
+                                                                    return Mono.just(resp);
+                                                                });
+                                                    })
+                                                    .onErrorResume(e -> {
+                                                        log.error("Token refresh or retry failed", e);
+                                                        return Mono.just(response);
+                                                    });
+                                        }
+                                        return Mono.just(response);
+                                    })
+                                    .defaultIfEmpty(response);
+                        });
     }
 }
