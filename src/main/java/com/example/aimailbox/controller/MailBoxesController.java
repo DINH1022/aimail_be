@@ -43,5 +43,9 @@ public class MailBoxesController {
     public Mono<LabelDetailResponse> createLabel(@Valid @RequestBody LabelCreationRequest request) {
         return proxyMailService.createLabel(request);
     }
+    @DeleteMapping("/{id}")
+    public Mono<Void> deleteLabel(@PathVariable String id) {
+        return proxyMailService.deleteLabel(id);
+    }
 
 }

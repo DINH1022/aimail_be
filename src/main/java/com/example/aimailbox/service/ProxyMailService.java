@@ -70,6 +70,14 @@ public class ProxyMailService {
                 .onErrorMap(e -> new RuntimeException("Failed to create label", e));
     }
 
+    public Mono<Void> deleteLabel(String id) {
+        return gmailWebClient.delete()
+                .uri("/labels/{id}", id)
+                 .retrieve()
+                 .bodyToMono(Void.class)
+                .onErrorMap(e -> new RuntimeException("Failed to delete label", e));
+    }
+
     public Mono<ListThreadResponse> getListThreads(Integer maxResults, String pageToken, String query, String labelId,
             Boolean includeSpamTrash) {
         return gmailWebClient.get()
