@@ -42,22 +42,43 @@ public class WebClientConfig {
     @Bean
     public ExchangeFilterFunction authorizationHeaderFilter(OAuthTokenService oAuthTokenService) {
         return ExchangeFilterFunction.ofRequestProcessor(request ->
-                Mono.fromCallable(() -> SecurityContextHolder.getContext())
-                        .flatMap(ctx -> {
-                            Authentication auth = ctx.getAuthentication();
-                            if (auth != null && auth.getPrincipal() instanceof User user) {
-                                return oAuthTokenService.getValidAccessTokenReactive(user)
-                                        .map(token -> ClientRequest.from(request)
+                Mono.deferContextual(ctx -> {
+                    if (ctx.hasKey(Authentication.class)) {
+                        Authentication auth = ctx.get(Authentication.class);
+                        if (auth.getPrincipal() instanceof User user) {
+                            log.debug("Using authentication from Reactor context for user: {}", user.getEmail());
+                            return oAuthTokenService.getValidAccessTokenReactive(user)
+                                    .map(token -> {
+                                        log.debug("Using access token for user {}: {}...", user.getEmail(), token.substring(0, Math.min(20, token.length())));
+                                        return ClientRequest.from(request)
                                                 .header("Authorization", "Bearer " + token)
-                                                .build());
-                            }
-                            return Mono.just(request);
-                        })
-                        .defaultIfEmpty(request)
-                        .onErrorResume(e -> {
-                            log.error("Failed to add authorization header", e);
-                            return Mono.just(request);
-                        })
+                                                .build();
+                                    });
+                        }
+                    }
+                    
+                    return Mono.fromCallable(() -> SecurityContextHolder.getContext())
+                            .flatMap(secCtx -> {
+                                Authentication auth = secCtx.getAuthentication();
+                                if (auth != null && auth.getPrincipal() instanceof User user) {
+                                    log.debug("Using authentication from SecurityContextHolder for user: {}", user.getEmail());
+                                    return oAuthTokenService.getValidAccessTokenReactive(user)
+                                            .map(token -> {
+                                                log.debug("Using access token for user {}: {}...", user.getEmail(), token.substring(0, Math.min(20, token.length())));
+                                                return ClientRequest.from(request)
+                                                        .header("Authorization", "Bearer " + token)
+                                                        .build();
+                                            });
+                                }
+                                log.warn("No authenticated user found for request to {}", request.url());
+                                return Mono.just(request);
+                            });
+                })
+                .defaultIfEmpty(request)
+                .onErrorResume(e -> {
+                    log.error("Failed to add authorization header", e);
+                    return Mono.just(request);
+                })
         );
     }
 
