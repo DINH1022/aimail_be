@@ -1,9 +1,11 @@
 package com.example.aimailbox.controller;
 
+import com.example.aimailbox.dto.request.LabelCreationRequest;
 import com.example.aimailbox.dto.response.LabelDetailResponse;
 import com.example.aimailbox.dto.response.LabelResponse;
 import com.example.aimailbox.dto.response.ListThreadResponse;
 import com.example.aimailbox.service.ProxyMailService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.web.bind.annotation.*;
@@ -36,6 +38,10 @@ public class MailBoxesController {
             @RequestParam(required = false) String query,
             @RequestParam(required = false, defaultValue = "false") Boolean includeSpamTrash) {
         return proxyMailService.getListThreads(maxResults, pageToken, query, id, includeSpamTrash);
+    }
+    @PostMapping
+    public Mono<LabelDetailResponse> createLabel(@Valid @RequestBody LabelCreationRequest request) {
+        return proxyMailService.createLabel(request);
     }
 
 }

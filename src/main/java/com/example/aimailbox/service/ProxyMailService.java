@@ -1,6 +1,7 @@
 package com.example.aimailbox.service;
 
 import com.example.aimailbox.dto.request.EmailSendRequest;
+import com.example.aimailbox.dto.request.LabelCreationRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
@@ -58,6 +59,15 @@ public class ProxyMailService {
                 .bodyToMono(LabelDetailResponse.class)
                 .defaultIfEmpty(new LabelDetailResponse())
                 .onErrorMap(e -> new RuntimeException("Failed to fetch label details", e));
+    }
+
+    public Mono<LabelDetailResponse> createLabel(LabelCreationRequest request) {
+        return gmailWebClient.post()
+                .uri("/labels")
+                 .bodyValue(request)
+                 .retrieve()
+                 .bodyToMono(LabelDetailResponse.class)
+                .onErrorMap(e -> new RuntimeException("Failed to create label", e));
     }
 
     public Mono<ListThreadResponse> getListThreads(Integer maxResults, String pageToken, String query, String labelId,
