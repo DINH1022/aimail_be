@@ -78,40 +78,35 @@ public class MailController {
 
     @GetMapping("/{messageId}/summary")
     public Mono<EmailSummaryResponse> summarizeMessage(@PathVariable String messageId, HttpServletRequest request) {
-        String authHeader = request.getHeader("Authorization");
-        String loggedAuth = authHeader;
-        if (loggedAuth == null) loggedAuth = "(none)";
-        else if (loggedAuth.length() > 64) loggedAuth = loggedAuth.substring(0, 64) + "...";
-        log.info("Incoming summary request for messageId={} Authorization={}", messageId, loggedAuth);
-
-        // Log current SecurityContext (may be empty if filter not applied)
+        // Try to obtain Google access token from the current authenticated user first
+        String bearerToken = null;
         try {
             var sc = org.springframework.security.core.context.SecurityContextHolder.getContext();
-            if (sc == null) {
-                log.warn("SecurityContextHolder.getContext() returned null in controller");
-            } else {
+            if (sc != null) {
                 var auth = sc.getAuthentication();
-                if (auth == null) {
-                    log.warn("No Authentication in SecurityContextHolder in controller");
-                } else {
-                    Object principal = auth.getPrincipal();
-                    log.info("Controller SecurityContext authentication present: name={} principalClass={} authenticated={}",
-                            auth.getName(), principal == null ? "null" : principal.getClass().getName(), auth.isAuthenticated());
+                if (auth != null && auth.getPrincipal() instanceof com.example.aimailbox.model.User) {
+                    com.example.aimailbox.model.User currentUser = (com.example.aimailbox.model.User) auth.getPrincipal();
+                    bearerToken = currentUser.getGoogleAccessToken();
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to inspect SecurityContext in controller", e);
+            log.warn("Failed to read current user from SecurityContext", e);
         }
 
-        // If caller supplied an Authorization header (Google access token), extract and pass it to the service
-        String bearerToken = null;
-        if (authHeader != null) {
-            if (authHeader.toLowerCase().startsWith("bearer ")) {
-                bearerToken = authHeader.substring(7).trim();
-            } else {
-                bearerToken = authHeader.trim();
+        // If no token on the logged-in user, fall back to Authorization header (client-supplied token)
+        if (bearerToken == null || bearerToken.isBlank()) {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null) {
+                if (authHeader.toLowerCase().startsWith("bearer ")) {
+                    bearerToken = authHeader.substring(7).trim();
+                } else {
+                    bearerToken = authHeader.trim();
+                }
             }
         }
+
+        String loggedToken = bearerToken == null ? "(none)" : (bearerToken.length() > 64 ? bearerToken.substring(0, 64) + "..." : bearerToken);
+        log.info("Incoming summary request for messageId={} using bearerTokenPrefix={}", messageId, loggedToken);
 
         return proxyMailService.summarizeMessage(messageId, bearerToken);
     }

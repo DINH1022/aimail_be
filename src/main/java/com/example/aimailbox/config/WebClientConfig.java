@@ -32,7 +32,7 @@ public class WebClientConfig {
 
     @Bean
     public WebClient googleOauthClient(WebClient.Builder builder) {
-        return builder
+        return WebClient.builder()
                 .baseUrl("https://oauth2.googleapis.com")
                 .build();
     }
@@ -40,7 +40,7 @@ public class WebClientConfig {
     // Google Generative API client (used to call Gemini models)
     @Bean
     public WebClient googleGenerativeClient(WebClient.Builder builder) {
-        return builder
+        return WebClient.builder()
                 .baseUrl("https://generativelanguage.googleapis.com/v1beta2")
                 .exchangeStrategies(ExchangeStrategies.builder()
                         .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))

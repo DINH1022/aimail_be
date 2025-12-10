@@ -481,8 +481,18 @@ public class ProxyMailService {
                 .uri(fullUrl)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(body)
-                .retrieve()
-                .bodyToMono(GeminiResponse.class)
+                .exchangeToMono(resp -> {
+                    if (resp.statusCode().is2xxSuccessful()) {
+                        return resp.bodyToMono(GeminiResponse.class);
+                    } else {
+                        return resp.bodyToMono(String.class)
+                                .defaultIfEmpty("")
+                                .flatMap(b -> {
+                                    log.error("generateSummary: Gemini returned non-2xx status {} with body={}", resp.statusCode(), b);
+                                    return Mono.error(new RuntimeException("Gemini API error: " + resp.statusCode() + " " + b));
+                                });
+                    }
+                })
                 .doOnNext(resp -> log.info("generateSummary: Gemini response preview={}",
                         resp.getText() == null ? "(null)" : resp.getText().substring(0, Math.min(200, resp.getText().length()))))
                 .map(resp -> {
@@ -555,8 +565,18 @@ public class ProxyMailService {
                 .uri(fullUrl)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(body)
-                .retrieve()
-                .bodyToMono(GeminiResponse.class)
+                .exchangeToMono(resp -> {
+                    if (resp.statusCode().is2xxSuccessful()) {
+                        return resp.bodyToMono(GeminiResponse.class);
+                    } else {
+                        return resp.bodyToMono(String.class)
+                                .defaultIfEmpty("")
+                                .flatMap(b -> {
+                                    log.error("summarizeText: Gemini returned non-2xx status {} with body={}", resp.statusCode(), b);
+                                    return Mono.error(new RuntimeException("Gemini API error: " + resp.statusCode() + " " + b));
+                                });
+                    }
+                })
                 .doOnNext(resp -> log.info("summarizeText: Gemini response preview={}",
                         resp.getText() == null ? "(null)" : resp.getText().substring(0, Math.min(200, resp.getText().length()))))
                 .map(resp -> new EmailSummaryResponse(
