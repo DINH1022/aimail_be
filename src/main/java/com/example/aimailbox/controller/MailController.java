@@ -2,6 +2,7 @@ package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.request.EmailSendRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
+import com.example.aimailbox.dto.response.EmailSummaryResponse;
 import com.example.aimailbox.dto.response.GmailSendResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.service.ProxyMailService;
@@ -69,5 +70,10 @@ public class MailController {
     @DeleteMapping("/message/{id}")
     public Mono<Void> deleteMessage(@PathVariable String id) {
         return proxyMailService.deleteMessage(id);
+    }
+
+    @GetMapping("/{messageId}/summary")
+    public Mono<EmailSummaryResponse> summarizeMessage(@PathVariable String messageId) {
+        return proxyMailService.summarizeMessage(messageId);
     }
 }

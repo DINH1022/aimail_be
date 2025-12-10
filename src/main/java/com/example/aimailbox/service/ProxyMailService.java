@@ -395,4 +395,67 @@ public class ProxyMailService {
         contentBodyPart.setContent(alternativeMultipart);
         return contentBodyPart;
     }
+
+    // New: summarize a single message by id
+    public Mono<EmailSummaryResponse> summarizeMessage(String messageId) {
+        return gmailWebClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/messages/{id}")
+                        .queryParam("format", "full")
+                        .build(messageId))
+                .retrieve()
+                .bodyToMono(Message.class)
+                .map(this::parseMessage)
+                .map(this::generateSummary)
+                .onErrorMap(e -> new RuntimeException("Failed to summarize message", e));
+    }
+
+    private EmailSummaryResponse generateSummary(MessageDetailResponse message) {
+        if (message == null)
+            return new EmailSummaryResponse();
+
+        String subject = message.getSubject() != null ? message.getSubject() : "";
+        String from = message.getFrom();
+        String to = message.getTo();
+        String date = message.getDate();
+
+        String sourceText = message.getTextBody();
+        if (sourceText == null || sourceText.isBlank()) {
+            sourceText = message.getHtmlBody();
+            if (sourceText != null)
+                sourceText = sourceText.replaceAll("<.*?>", "");
+        }
+        if (sourceText == null || sourceText.isBlank()) {
+            sourceText = message.getSnippet() != null ? message.getSnippet() : "";
+        }
+
+        List<String> bullets = new ArrayList<>();
+        if (!sourceText.isBlank()) {
+            // split into sentences
+            String[] sentences = sourceText.trim().split("(?<=[\\.!?])\\s+");
+            int take = Math.min(3, sentences.length);
+            for (int i = 0; i < take; i++) {
+                String s = sentences[i].trim();
+                if (s.length() > 240) s = s.substring(0, 237) + "...";
+                bullets.add(s);
+            }
+            if (bullets.isEmpty() && sourceText.length() > 0) {
+                String snippet = sourceText.length() > 240 ? sourceText.substring(0, 237) + "..." : sourceText;
+                bullets.add(snippet);
+            }
+        }
+
+        String oneLineSubject = subject;
+        if (oneLineSubject == null) oneLineSubject = "";
+        if (oneLineSubject.length() > 120) oneLineSubject = oneLineSubject.substring(0, 117) + "...";
+
+        return EmailSummaryResponse.builder()
+                .messageId(message.getId())
+                .subject(subject)
+                .from(from)
+                .to(to)
+                .date(date)
+                .oneLineSubject(oneLineSubject)
+                .bullets(bullets)
+                .build();
+    }
 }
