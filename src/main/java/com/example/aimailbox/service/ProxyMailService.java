@@ -485,9 +485,37 @@ public class ProxyMailService {
                 .bodyToMono(GeminiResponse.class)
                 .doOnNext(resp -> log.info("generateSummary: Gemini response preview={}",
                         resp.getText() == null ? "(null)" : resp.getText().substring(0, Math.min(200, resp.getText().length()))))
-                .map(resp -> new EmailSummaryResponse(
-                        resp.getText() != null ? resp.getText() : "Failed to summarize"
-                ))
+                .map(resp -> {
+                    String summaryText = resp.getText() != null ? resp.getText() : "Failed to summarize";
+
+                    // build one-line subject (fallback to subject or snippet)
+                    String oneLine = message.getSubject() != null ? message.getSubject().replaceAll("\n", " ").trim() : null;
+                    if (oneLine != null && oneLine.length() > 120) oneLine = oneLine.substring(0, 117) + "...";
+
+                    // create bullets from summary by splitting into lines / sentences, limit to 5
+                    List<String> bullets = new ArrayList<>();
+                    if (summaryText != null && !summaryText.isBlank()) {
+                        String[] parts = summaryText.split("\\r?\\n|(?<=[.!?])\\s+");
+                        for (String p : parts) {
+                            String t = p.trim();
+                            if (!t.isEmpty()) {
+                                bullets.add(t);
+                                if (bullets.size() >= 5) break;
+                            }
+                        }
+                    }
+
+                    return EmailSummaryResponse.builder()
+                            .messageId(message.getId())
+                            .subject(message.getSubject())
+                            .from(message.getFrom())
+                            .to(message.getTo())
+                            .date(message.getDate())
+                            .oneLineSubject(oneLine)
+                            .bullets(bullets.isEmpty() ? null : bullets)
+                            .summary(summaryText)
+                            .build();
+                })
                 .onErrorResume(e -> {
                     log.error("generateSummary: Gemini request failed", e);
                     return Mono.just(new EmailSummaryResponse("Failed to summarize"));
