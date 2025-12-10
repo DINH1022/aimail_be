@@ -79,9 +79,10 @@ public class MailController {
     @GetMapping("/{messageId}/summary")
     public Mono<EmailSummaryResponse> summarizeMessage(@PathVariable String messageId, HttpServletRequest request) {
         String authHeader = request.getHeader("Authorization");
-        if (authHeader == null) authHeader = "(none)";
-        else if (authHeader.length() > 64) authHeader = authHeader.substring(0, 64) + "...";
-        log.info("Incoming summary request for messageId={} Authorization={}", messageId, authHeader);
+        String loggedAuth = authHeader;
+        if (loggedAuth == null) loggedAuth = "(none)";
+        else if (loggedAuth.length() > 64) loggedAuth = loggedAuth.substring(0, 64) + "...";
+        log.info("Incoming summary request for messageId={} Authorization={}", messageId, loggedAuth);
 
         // Log current SecurityContext (may be empty if filter not applied)
         try {
@@ -102,7 +103,17 @@ public class MailController {
             log.warn("Failed to inspect SecurityContext in controller", e);
         }
 
-        return proxyMailService.summarizeMessage(messageId);
+        // If caller supplied an Authorization header (Google access token), extract and pass it to the service
+        String bearerToken = null;
+        if (authHeader != null) {
+            if (authHeader.toLowerCase().startsWith("bearer ")) {
+                bearerToken = authHeader.substring(7).trim();
+            } else {
+                bearerToken = authHeader.trim();
+            }
+        }
+
+        return proxyMailService.summarizeMessage(messageId, bearerToken);
     }
 
     @PostMapping(value = "/summarize-text", consumes = MediaType.TEXT_PLAIN_VALUE)

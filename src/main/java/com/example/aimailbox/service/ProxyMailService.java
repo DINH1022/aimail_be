@@ -541,10 +541,24 @@ public class ProxyMailService {
     }
 
     public Mono<EmailSummaryResponse> summarizeMessage(String messageId) {
-        return gmailWebClient.get()
+        return summarizeMessage(messageId, null);
+    }
+
+    // New overload: accepts an optional Google access token (Bearer) to use for the Gmail API request
+    public Mono<EmailSummaryResponse> summarizeMessage(String messageId, String bearerToken) {
+        var uriSpec = gmailWebClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/messages/{id}")
                         .queryParam("format", "full")
-                        .build(messageId))
+                        .build(messageId));
+
+        if (bearerToken != null && !bearerToken.isBlank()) {
+            log.info("summarizeMessage: using provided bearer token for Gmail request (messageId={})", messageId);
+            uriSpec = uriSpec.headers(h -> h.setBearerAuth(bearerToken));
+        } else {
+            log.info("summarizeMessage: no bearer token provided, using app SecurityContext for Gmail request (messageId={})", messageId);
+        }
+
+        return uriSpec
                 .retrieve()
                 .bodyToMono(Message.class)
                 .map(this::parseMessage)
