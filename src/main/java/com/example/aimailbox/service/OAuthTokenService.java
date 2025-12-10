@@ -35,23 +35,36 @@ public class OAuthTokenService {
     private String redirectUri;
 
     public Mono<String> getValidAccessTokenReactive(User user) {
-        if (user.getGoogleAccessToken() == null) {
-            return Mono.error(new RuntimeException("No Google access token for user"));
-        }
+        return Mono.fromCallable(() -> userRepository.findById(user.getId())
+                .orElseThrow(() -> new RuntimeException("User not found")))
+                .flatMap(freshUser -> {
+                    if (freshUser.getGoogleAccessToken() == null) {
+                        log.error("User {} has no Google access token", freshUser.getEmail());
+                        return Mono.error(new RuntimeException("No Google access token for user"));
+                    }
 
-        if (user.getGoogleTokenExpiryTime() != null &&
-                user.getGoogleTokenExpiryTime().isBefore(Instant.now().plusSeconds(300))) {
+                    if (freshUser.getGoogleTokenExpiryTime() != null &&
+                            freshUser.getGoogleTokenExpiryTime().isBefore(Instant.now().plusSeconds(300))) {
 
-            if (user.getGoogleRefreshToken() == null) {
-                return Mono.error(new RuntimeException("Access token expired and no refresh token"));
-            }
+                        if (freshUser.getGoogleRefreshToken() == null) {
+                            log.error("User {} has expired token but no refresh token", freshUser.getEmail());
+                            return Mono.error(new RuntimeException("Access token expired and no refresh token"));
+                        }
 
-            return refreshAccessTokenReactive(user.getGoogleRefreshToken())
-                    .doOnNext(resp -> saveTokensToUser(user, resp))
-                    .map(GoogleTokenResponse::getAccessToken);
-        }
+                        log.info("Access token expiring soon for user {}, refreshing...", freshUser.getEmail());
+                        return refreshAccessTokenReactive(freshUser.getGoogleRefreshToken())
+                                .doOnNext(resp -> {
+                                    saveTokensToUser(freshUser, resp);
+                                    user.setGoogleAccessToken(freshUser.getGoogleAccessToken());
+                                    user.setGoogleRefreshToken(freshUser.getGoogleRefreshToken());
+                                    user.setGoogleTokenExpiryTime(freshUser.getGoogleTokenExpiryTime());
+                                })
+                                .map(GoogleTokenResponse::getAccessToken);
+                    }
 
-        return Mono.just(user.getGoogleAccessToken());
+                    log.debug("Using existing valid token for user {}", freshUser.getEmail());
+                    return Mono.just(freshUser.getGoogleAccessToken());
+                });
     }
 
     public Mono<GoogleTokenResponse> refreshAccessTokenReactive(String refreshToken) {

@@ -4,6 +4,8 @@ package com.example.aimailbox.dto.response.mail;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.util.List;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -12,5 +14,6 @@ import lombok.experimental.FieldDefaults;
 public class Thread {
     String id;
     String snippet;
+    List<String> labelIds;
 }
 

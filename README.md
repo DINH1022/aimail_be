@@ -7,10 +7,12 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
 ### Prerequisites
 
 **Frontend:**
+
 - Node.js 20.19+ or 22.12+
 - npm or yarn
 
 **Backend:**
+
 - Java 17+
 - Maven 3.6+
 - Database H2 for development
@@ -20,13 +22,14 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
 1. **Configure environment variables**
 
    Edit `src/main/resources/application.yaml`:
+
    ```yaml
    spring:
      datasource:
        url: jdbc:h2:mem:testdb
        username: sa
        password: password
-   
+
    jwt:
      secret: your-super-secret-jwt-signing-key-change-this
      access-expiration: 15m
@@ -34,6 +37,7 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
    ```
 
    Or use environment variables:
+
    ```bash
    export JWT_SECRET=your-secret-key
    export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/aimailbox
@@ -42,13 +46,14 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
    ```
 
 2. **Run the application**
+
    ```bash
    # Build
    mvn clean package
-   
+
    # Run
    java -jar target/AImailbox-0.0.1-SNAPSHOT.jar
-   
+
    # Or development mode
    mvn spring-boot:run
    ```
@@ -58,6 +63,7 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
 ### Frontend Setup
 
 1. **Install dependencies**
+
    ```bash
    cd frontend
    npm install
@@ -66,18 +72,19 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
 2. **Configure API endpoint** (optional)
 
    Update `src/api/apiClient.ts`:
+
    ```typescript
-   const API_BASE_URL = 'http://localhost:8080/api';
+   const API_BASE_URL = "http://localhost:8080/api";
    ```
 
 3. **Start development server**
+
    ```bash
    npm run dev
    ```
 
    Frontend runs on `http://localhost:5173`
    Backend runs on `http://localhost:8080`
-
 
 ## Public Hosting URL and Deployment
 
@@ -91,13 +98,14 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
 #### Docker Deployment (Backend)
 
 1. **Create Dockerfile:**
+
    ```dockerfile
    FROM maven:3.9-eclipse-temurin-17 AS build
    WORKDIR /app
    COPY pom.xml .
    COPY src ./src
    RUN mvn clean package -DskipTests
-   
+
    FROM eclipse-temurin:17-jre-alpine
    WORKDIR /app
    COPY --from=build /app/target/AImailbox-0.0.1-SNAPSHOT.jar app.jar
@@ -106,9 +114,10 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
    ```
 
 2. **Build and run:**
+
    ```bash
    docker build -t aimailbox:latest .
-   
+
    docker run -e JWT_SECRET=your-secret \
               -e SPRING_PROFILES_ACTIVE=prod \
               -e SPRING_DATASOURCE_URL=jdbc:postgresql://host:5432/db \
@@ -142,6 +151,7 @@ Or connect GitHub repository in Vercel dashboard for automatic deployments.
 **Backend - Dual Token System:**
 
 - **Access Tokens:**
+
   - Type: Stateless JWT
   - Lifespan: 15 minutes (configurable)
   - Storage: Not stored server-side
@@ -204,8 +214,9 @@ Or connect GitHub repository in Vercel dashboard for automatic deployments.
 ```
 
 **Token Refresh Mechanism:**
+
 ```
-Request fails (401) 
+Request fails (401)
   ↓
 Automatic refresh with refresh token
   ↓
@@ -244,3 +255,32 @@ If refresh fails → Clear tokens → Redirect to login
 
 ---
 
+## Snooze / Deferral Feature
+
+This project includes an email "snooze" (deferral) workflow that lets users postpone emails until a specified time. The workflow is implemented as a lightweight workflow DB that complements the Gmail/proxy data.
+
+Overview
+
+- Users choose a snooze time from the UI (quick options or a custom datetime). The backend stores a workflow record referencing the email's `threadId` with `status = SNOOZED` and `snoozedUntil` set to the chosen time.
+- A scheduled task runs periodically (every 60 seconds in development) to restore snoozed emails whose `snoozedUntil` has passed. Restoring sets the workflow `status` back to `INBOX` (or a prior state) and clears `snoozedUntil`.
+
+API Endpoints (backend)
+
+- `POST /api/emails/thread/{threadId}/snooze` — Create or update a workflow record for the given `threadId` and set a snooze timestamp. Request body should include an ISO-8601 timestamp (e.g. `{"snoozeTime":"2025-12-10T08:00:00Z"}`).
+- `POST /api/emails/{id}/unsnooze` — Remove snooze state from a workflow record (used when user unsnoozes manually).
+- `GET /api/emails?status=SNOOZED` — List workflow records currently snoozed (used by the UI to build the Snoozed mailbox/column).
+- `PATCH /api/emails/{id}/read` and `PATCH /api/emails/{id}/starred` — Update workflow-managed flags.
+
+Behavior and Merge Rules
+
+- The application merges two data sources when rendering lists and details:
+  - Gmail/proxy data: authoritative for message content, labels, and timestamps.
+  - Workflow DB: authoritative for workflow-managed fields (status, snoozedUntil, summary), but may be `null` for some flags.
+- To avoid overwriting Gmail-derived states (read/starred) when no workflow record exists, the backend model uses nullable flags for `isRead` and `isStarred`. The merge logic uses `workflowValue ?? gmailValue` so Gmail values are preserved unless workflow explicitly overrides them.
+- To prevent large numbers of 404s during list prefetch, the frontend performs a batch fetch of workflow records and merges them by `threadId` at the list level rather than calling the workflow endpoint per thread.
+
+Implementation Notes (developer)
+
+- The scheduled restore job runs every 60 seconds by default in development (`@Scheduled(fixedRate = 60000)`). Adjust the interval in production as needed.
+- The backend will create a workflow record when a user snoozes an email or when UI code explicitly requests one. Consider adding a dedicated `POST /api/emails/thread/{threadId}/create` endpoint if you want a clean way to create workflow records without using the snooze endpoint as a workaround.
+- The `snooze` endpoint accepts ISO timestamps in the request body; the server stores timestamps in UTC and computes comparisons using `Instant`.

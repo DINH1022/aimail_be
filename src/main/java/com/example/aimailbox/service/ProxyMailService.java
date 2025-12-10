@@ -1,6 +1,7 @@
 package com.example.aimailbox.service;
 
 import com.example.aimailbox.dto.request.EmailSendRequest;
+import com.example.aimailbox.dto.request.LabelCreationRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
@@ -29,6 +30,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -58,6 +60,23 @@ public class ProxyMailService {
                 .bodyToMono(LabelDetailResponse.class)
                 .defaultIfEmpty(new LabelDetailResponse())
                 .onErrorMap(e -> new RuntimeException("Failed to fetch label details", e));
+    }
+
+    public Mono<LabelDetailResponse> createLabel(LabelCreationRequest request) {
+        return gmailWebClient.post()
+                .uri("/labels")
+                 .bodyValue(request)
+                 .retrieve()
+                 .bodyToMono(LabelDetailResponse.class)
+                .onErrorMap(e -> new RuntimeException("Failed to create label", e));
+    }
+
+    public Mono<Void> deleteLabel(String id) {
+        return gmailWebClient.delete()
+                .uri("/labels/{id}", id)
+                 .retrieve()
+                 .bodyToMono(Void.class)
+                .onErrorMap(e -> new RuntimeException("Failed to delete label", e));
     }
 
     public Mono<ListThreadResponse> getListThreads(Integer maxResults, String pageToken, String query, String labelId,
@@ -159,13 +178,34 @@ public class ProxyMailService {
                     .error(new IllegalArgumentException("At least one recipient (To, Cc, or Bcc) must be specified"));
         }
 
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof User)) {
+            log.error("No authenticated user found in SecurityContext");
+            return Mono.error(new RuntimeException("You must be logged in to send emails"));
+        }
+
+        User currentUser = (User) auth.getPrincipal();
+        if (currentUser.getGoogleAccessToken() == null) {
+            log.error("User {} attempted to send email without Google OAuth token", currentUser.getEmail());
+            return Mono.error(new RuntimeException("You must sign in with Google to send emails. Please logout and login using 'Sign in with Google'."));
+        }
+
         if (request.getInReplyToMessageId() != null && !request.getInReplyToMessageId().isEmpty()) {
             String subject = request.getSubject();
             String replySubject = subject.startsWith("Re:") ? subject : "Re: " + subject;
             request.setSubject(replySubject);
         }
+        
         return Mono.fromCallable(() -> createMimeMessage(request))
-                .flatMap(email -> sendToGmailApi(email, request.getThreadId()));
+                .flatMap(email -> sendToGmailApi(email, request.getThreadId()))
+                .contextWrite(ctx -> ctx.put(Authentication.class, auth))
+                .onErrorMap(e -> {
+                    if (e.getMessage() != null && e.getMessage().contains("401")) {
+                        log.error("Gmail API returned 401 Unauthorized for user {}", currentUser.getEmail());
+                        return new RuntimeException("Gmail authentication failed. Please logout and login again with Google.");
+                    }
+                    return e;
+                });
     }
 
     public Mono<String> modifyMessageLabels(ModifyEmailRequest request) {
