@@ -18,5 +18,9 @@ public class EmailSummaryResponse {
     String date;
     String oneLineSubject;
     List<String> bullets;
-}
+    String summary;
 
+    public EmailSummaryResponse(String summary) {
+        this.summary = summary;
+    }
+}

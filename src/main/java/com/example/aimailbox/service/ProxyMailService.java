@@ -16,6 +16,7 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -34,6 +35,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -42,6 +44,10 @@ import org.springframework.core.ParameterizedTypeReference;
 public class ProxyMailService {
     final WebClient gmailWebClient;
     final OAuthTokenService oAuthTokenService;
+    final WebClient googleGenerativeClient;
+
+    @Value("${google.generative-api-key:}")
+    String googleGenerativeApiKey;
 
     public Mono<List<LabelResponse>> getAllLabels() {
         return gmailWebClient.get()
@@ -436,7 +442,104 @@ public class ProxyMailService {
         return contentBodyPart;
     }
 
-    // New: summarize a single message by id
+    private Mono<EmailSummaryResponse> generateSummary(MessageDetailResponse message) {
+        String content = message.getTextBody() != null
+                ? message.getTextBody()
+                : message.getHtmlBody();
+
+        if (content == null || content.isBlank()) {
+            log.info("generateSummary: no content to summarize for messageId={}", message.getId());
+            return Mono.just(new EmailSummaryResponse("No content to summarize"));
+        }
+
+        String prompt = """
+        Summarize the following email clearly and concisely.
+        Provide ONLY the summary text, with no explanation.
+
+        Email:
+        %s
+        """.formatted(content);
+
+        if (googleGenerativeApiKey == null || googleGenerativeApiKey.isBlank()) {
+            log.warn("generateSummary: googleGenerativeApiKey is not set; Gemini call may fail");
+        }
+
+        String fullUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
+                + "?key=" + googleGenerativeApiKey;
+
+        log.info("generateSummary: calling Gemini at {} promptLen={}", fullUrl, prompt.length());
+
+        Map<String, Object> body = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(
+                                Map.of("text", prompt)
+                        ))
+                )
+        );
+
+        return googleGenerativeClient.post()
+                .uri(fullUrl)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(GeminiResponse.class)
+                .doOnNext(resp -> log.info("generateSummary: Gemini response preview={}",
+                        resp.getText() == null ? "(null)" : resp.getText().substring(0, Math.min(200, resp.getText().length()))))
+                .map(resp -> new EmailSummaryResponse(
+                        resp.getText() != null ? resp.getText() : "Failed to summarize"
+                ))
+                .onErrorResume(e -> {
+                    log.error("generateSummary: Gemini request failed", e);
+                    return Mono.just(new EmailSummaryResponse("Failed to summarize"));
+                });
+    }
+
+    public Mono<EmailSummaryResponse> summarizeText(String text) {
+        if (text == null || text.isBlank()) {
+            log.info("summarizeText: empty input");
+            return Mono.just(new EmailSummaryResponse("No content to summarize"));
+        }
+
+        String prompt = """
+        Summarize the following email clearly and concisely.
+        Provide ONLY the summary text, with no explanation.
+
+        Email:
+        %s
+        """.formatted(text);
+
+        if (googleGenerativeApiKey == null || googleGenerativeApiKey.isBlank()) {
+            log.warn("summarizeText: googleGenerativeApiKey is not set; Gemini call may fail");
+        }
+
+        String fullUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
+                + "?key=" + googleGenerativeApiKey;
+
+        Map<String, Object> body = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(
+                                Map.of("text", prompt)
+                        ))
+                )
+        );
+
+        return googleGenerativeClient.post()
+                .uri(fullUrl)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(GeminiResponse.class)
+                .doOnNext(resp -> log.info("summarizeText: Gemini response preview={}",
+                        resp.getText() == null ? "(null)" : resp.getText().substring(0, Math.min(200, resp.getText().length()))))
+                .map(resp -> new EmailSummaryResponse(
+                        resp.getText() != null ? resp.getText() : "Failed to summarize"
+                ))
+                .onErrorResume(e -> {
+                    log.error("summarizeText: Gemini request failed", e);
+                    return Mono.just(new EmailSummaryResponse("Failed to summarize"));
+                });
+    }
+
     public Mono<EmailSummaryResponse> summarizeMessage(String messageId) {
         return gmailWebClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/messages/{id}")
@@ -445,57 +548,8 @@ public class ProxyMailService {
                 .retrieve()
                 .bodyToMono(Message.class)
                 .map(this::parseMessage)
-                .map(this::generateSummary)
-                .onErrorMap(e -> new RuntimeException("Failed to summarize message", e));
+                .flatMap(this::generateSummary)
+                .onErrorReturn(new EmailSummaryResponse("Failed to load message"));
     }
 
-    private EmailSummaryResponse generateSummary(MessageDetailResponse message) {
-        if (message == null)
-            return new EmailSummaryResponse();
-
-        String subject = message.getSubject() != null ? message.getSubject() : "";
-        String from = message.getFrom();
-        String to = message.getTo();
-        String date = message.getDate();
-
-        String sourceText = message.getTextBody();
-        if (sourceText == null || sourceText.isBlank()) {
-            sourceText = message.getHtmlBody();
-            if (sourceText != null)
-                sourceText = sourceText.replaceAll("<.*?>", "");
-        }
-        if (sourceText == null || sourceText.isBlank()) {
-            sourceText = message.getSnippet() != null ? message.getSnippet() : "";
-        }
-
-        List<String> bullets = new ArrayList<>();
-        if (!sourceText.isBlank()) {
-            // split into sentences
-            String[] sentences = sourceText.trim().split("(?<=[\\.!?])\\s+");
-            int take = Math.min(3, sentences.length);
-            for (int i = 0; i < take; i++) {
-                String s = sentences[i].trim();
-                if (s.length() > 240) s = s.substring(0, 237) + "...";
-                bullets.add(s);
-            }
-            if (bullets.isEmpty() && sourceText.length() > 0) {
-                String snippet = sourceText.length() > 240 ? sourceText.substring(0, 237) + "..." : sourceText;
-                bullets.add(snippet);
-            }
-        }
-
-        String oneLineSubject = subject;
-        if (oneLineSubject == null) oneLineSubject = "";
-        if (oneLineSubject.length() > 120) oneLineSubject = oneLineSubject.substring(0, 117) + "...";
-
-        return EmailSummaryResponse.builder()
-                .messageId(message.getId())
-                .subject(subject)
-                .from(from)
-                .to(to)
-                .date(date)
-                .oneLineSubject(oneLineSubject)
-                .bullets(bullets)
-                .build();
-    }
 }

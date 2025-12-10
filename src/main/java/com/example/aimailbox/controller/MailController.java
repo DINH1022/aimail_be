@@ -6,8 +6,11 @@ import com.example.aimailbox.dto.response.EmailSummaryResponse;
 import com.example.aimailbox.dto.response.GmailSendResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.service.ProxyMailService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
@@ -18,6 +21,7 @@ import reactor.core.publisher.Mono;
 @FieldDefaults(level = lombok.AccessLevel.PRIVATE, makeFinal = true)
 public class MailController {
     ProxyMailService proxyMailService;
+    private static final Logger log = LoggerFactory.getLogger(MailController.class);
 
     @GetMapping("/{id}")
     public Mono<ThreadDetailResponse> getEmailDetail(@PathVariable String id) {
@@ -73,7 +77,37 @@ public class MailController {
     }
 
     @GetMapping("/{messageId}/summary")
-    public Mono<EmailSummaryResponse> summarizeMessage(@PathVariable String messageId) {
+    public Mono<EmailSummaryResponse> summarizeMessage(@PathVariable String messageId, HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null) authHeader = "(none)";
+        else if (authHeader.length() > 64) authHeader = authHeader.substring(0, 64) + "...";
+        log.info("Incoming summary request for messageId={} Authorization={}", messageId, authHeader);
+
+        // Log current SecurityContext (may be empty if filter not applied)
+        try {
+            var sc = org.springframework.security.core.context.SecurityContextHolder.getContext();
+            if (sc == null) {
+                log.warn("SecurityContextHolder.getContext() returned null in controller");
+            } else {
+                var auth = sc.getAuthentication();
+                if (auth == null) {
+                    log.warn("No Authentication in SecurityContextHolder in controller");
+                } else {
+                    Object principal = auth.getPrincipal();
+                    log.info("Controller SecurityContext authentication present: name={} principalClass={} authenticated={}",
+                            auth.getName(), principal == null ? "null" : principal.getClass().getName(), auth.isAuthenticated());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to inspect SecurityContext in controller", e);
+        }
+
         return proxyMailService.summarizeMessage(messageId);
+    }
+
+    @PostMapping(value = "/summarize-text", consumes = MediaType.TEXT_PLAIN_VALUE)
+    public Mono<EmailSummaryResponse> summarizeTextRaw(@RequestBody String text) {
+        log.info("Incoming raw-text summary request (first64)={}", text == null ? "(null)" : (text.length() > 64 ? text.substring(0,64) + "..." : text));
+        return proxyMailService.summarizeText(text);
     }
 }

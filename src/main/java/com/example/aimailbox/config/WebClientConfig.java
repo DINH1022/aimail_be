@@ -9,7 +9,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.reactive.function.client.ClientRequest;
-import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
@@ -38,6 +37,17 @@ public class WebClientConfig {
                 .build();
     }
 
+    // Google Generative API client (used to call Gemini models)
+    @Bean
+    public WebClient googleGenerativeClient(WebClient.Builder builder) {
+        return builder
+                .baseUrl("https://generativelanguage.googleapis.com/v1beta2")
+                .exchangeStrategies(ExchangeStrategies.builder()
+                        .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                        .build())
+                .build();
+    }
+
     /** Add Authorization header using servlet SecurityContextHolder (works in servlet MVC controllers) */
     @Bean
     public ExchangeFilterFunction authorizationHeaderFilter(OAuthTokenService oAuthTokenService) {
@@ -56,7 +66,7 @@ public class WebClientConfig {
                                     });
                         }
                     }
-                    
+
                     return Mono.fromCallable(() -> SecurityContextHolder.getContext())
                             .flatMap(secCtx -> {
                                 Authentication auth = secCtx.getAuthentication();
