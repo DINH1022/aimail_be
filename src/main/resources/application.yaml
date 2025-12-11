@@ -20,7 +20,7 @@ frontend:
 
 cors:
   # include deployed Vercel frontend plus local dev origins
-  allowed-origins: https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app,http://localhost:5173,http://localhost:5174,http://localhost:3000
+  allowed-origins: https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app,http://localhost:5173,http://localhost:5174,http://localhost:3000,https://aimail-fsze5u387-vinhs-projects-373b8979.vercel.app/
 
 datasource:
   url: jdbc:h2:mem:testdb
