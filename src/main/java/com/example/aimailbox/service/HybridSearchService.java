@@ -11,6 +11,7 @@ import org.springframework.boot.autoconfigure.security.reactive.ReactiveSecurity
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -23,25 +24,37 @@ import java.util.List;
 @RequiredArgsConstructor
 public class HybridSearchService {
     EmailCacheService emailCacheService;
-    ProxyMailService proxyMailService;
 
     public Mono<List<ThreadDetailResponse>> searchFuzzyEmails(String query) {
-        List<ThreadDetailResponse> cachedEmails = emailCacheService.searchInCache(query);
-        if(!cachedEmails.isEmpty()){
-            return Mono.just(cachedEmails);
-        }
-        return proxyMailService.getListThreads(20,null,query,null,false)
-                .flatMap(listResponse->{
-                    if(listResponse==null||listResponse.getThreads()==null||listResponse.getThreads().isEmpty()){
-                        return Mono.just(List.of());
+        // 1. Sử dụng Mono.fromCallable để lấy SecurityContext từ ThreadLocal (Chuẩn MVC)
+        return Mono.fromCallable(() -> SecurityContextHolder.getContext().getAuthentication())
+                .flatMap(auth -> {
+                    // Kiểm tra đăng nhập
+                    if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+                        return Mono.error(new RuntimeException("Unauthorized: No authentication found"));
                     }
-                    return Flux.fromIterable(listResponse.getThreads())
-                            .flatMapSequential(shortThread-> proxyMailService.getThreadDetail(shortThread.getId())
-                            .onErrorResume(e->Mono.empty()))
-                            .collectList();
+
+                    String email = null;
+                    // Lấy email từ các loại Principal khác nhau
+                    if (auth.getPrincipal() instanceof User user) {
+                        email = user.getEmail();
+                    } else if (auth.getPrincipal() instanceof String) {
+                        email = (String) auth.getPrincipal();
+                    } else if (auth.getPrincipal() instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
+                        email = userDetails.getUsername();
+                    }
+
+                    if (email == null) {
+                        return Mono.error(new RuntimeException("Unauthorized: Email not found"));
+                    }
+                    return Mono.just(email);
+                })
+                .map(email -> {
+                    // 2. Chỉ gọi Search trong Cache
+                    // Nếu cache rỗng -> Trả về List rỗng luôn (Không gọi Gmail API nữa)
+                    return emailCacheService.searchInCache(query, email);
                 });
     }
-    // Trong HybridSearchService.java
 
     private final UserRepository userRepository; // Nhớ Inject cái này
 

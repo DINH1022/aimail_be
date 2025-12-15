@@ -21,6 +21,8 @@ import reactor.util.context.Context;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Service
@@ -29,17 +31,16 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 public class EmailCacheService {
     ProxyMailService proxyMailService;
-    AtomicReference<List<ThreadDetailResponse>> cachedThreads = new AtomicReference<>(List.of());
+    Map<String, List<ThreadDetailResponse>> userCache = new ConcurrentHashMap<>();
     public Mono<Void> syncRecentMails(User user) {
         Authentication auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
-        return proxyMailService.getListThreads(50, null, null, null, false)
+        return proxyMailService.getListThreads(100, null, null, null, false)
                 .flatMapMany(response -> {
                     if (response == null || response.getThreads() == null || response.getThreads().isEmpty()) {
                         return Flux.empty();
                     }
                     return Flux.fromIterable(response.getThreads());
                 })
-
                 .parallel()
                 .runOn(Schedulers.boundedElastic())
                 .flatMap(shortThread -> proxyMailService.getThreadDetail(shortThread.getId())
@@ -52,17 +53,17 @@ public class EmailCacheService {
                     if (details.isEmpty()) {
                         log.warn("SYNC COMPLETED but result list is EMPTY. Check errors above.");
                     } else {
-                        cachedThreads.set(details);
+                        userCache.put(user.getEmail(), details);
                     }
                 })
                 .doOnError(e -> log.error("SYNC FAILED with fatal error: ", e)) // Bắt lỗi nếu getListThreads chết
                 .then()
                 .contextWrite(Context.of(Authentication.class, auth));
     }
-    public List<ThreadDetailResponse> searchInCache(String query){
-        List<ThreadDetailResponse> currentData = cachedThreads.get();
+    public List<ThreadDetailResponse> searchInCache(String query,String userEmail) {
+        List<ThreadDetailResponse> currentData = userCache.getOrDefault(userEmail, List.of());
         if(query == null || query.isBlank()){
-            return currentData;
+            return List.of();
         }
         String lowerQuery = query.toLowerCase();
         return currentData.stream()
@@ -94,5 +95,4 @@ public class EmailCacheService {
         ThreadDetailResponse thread;
         int score;
     }
-
 }
