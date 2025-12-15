@@ -5,6 +5,7 @@ import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.EmailSummaryResponse;
 import com.example.aimailbox.dto.response.GmailSendResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
+import com.example.aimailbox.service.HybridSearchService;
 import com.example.aimailbox.service.ProxyMailService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -15,12 +16,15 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/emails")
 @RequiredArgsConstructor
 @FieldDefaults(level = lombok.AccessLevel.PRIVATE, makeFinal = true)
 public class MailController {
     ProxyMailService proxyMailService;
+    HybridSearchService hybridSearchService;
     private static final Logger log = LoggerFactory.getLogger(MailController.class);
 
     @GetMapping("/{id}")
@@ -115,5 +119,14 @@ public class MailController {
     public Mono<EmailSummaryResponse> summarizeTextRaw(@RequestBody String text) {
         log.info("Incoming raw-text summary request (first64)={}", text == null ? "(null)" : (text.length() > 64 ? text.substring(0,64) + "..." : text));
         return proxyMailService.summarizeText(text);
+    }
+
+    @GetMapping("/search")
+    public Mono<List<ThreadDetailResponse>> searchEmails(@RequestParam String query) {
+        return hybridSearchService.searchFuzzyEmails(query);
+    }
+    @PostMapping("/sync")
+    public Mono<Void> syncEmails() {
+        return hybridSearchService.refreshData();
     }
 }
