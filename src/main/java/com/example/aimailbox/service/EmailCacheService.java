@@ -1,9 +1,10 @@
 package com.example.aimailbox.service;
 
-import com.example.aimailbox.dto.response.ListThreadResponse;
 import com.example.aimailbox.dto.response.MessageDetailResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.model.User;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -21,9 +22,7 @@ import reactor.util.context.Context;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @FieldDefaults(level = AccessLevel.PRIVATE,makeFinal = true)
@@ -31,7 +30,11 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 public class EmailCacheService {
     ProxyMailService proxyMailService;
-    Map<String, List<ThreadDetailResponse>> userCache = new ConcurrentHashMap<>();
+    Cache<String, List<ThreadDetailResponse>> userCache = Caffeine.newBuilder()
+            .expireAfterAccess(30, TimeUnit.MINUTES)
+            .maximumSize(20)
+            .recordStats()
+            .build();
     public Mono<Void> syncRecentMails(User user) {
         Authentication auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
         return proxyMailService.getListThreads(100, null, null, null, false)
@@ -44,9 +47,7 @@ public class EmailCacheService {
                 .parallel()
                 .runOn(Schedulers.boundedElastic())
                 .flatMap(shortThread -> proxyMailService.getThreadDetail(shortThread.getId())
-                        .onErrorResume(e -> {
-                            return Mono.empty();
-                        }))
+                        .onErrorResume(e -> Mono.empty()))
                 .sequential()
                 .collectList()
                 .doOnNext(details -> {
@@ -61,8 +62,11 @@ public class EmailCacheService {
                 .contextWrite(Context.of(Authentication.class, auth));
     }
     public List<ThreadDetailResponse> searchInCache(String query,String userEmail) {
-        List<ThreadDetailResponse> currentData = userCache.getOrDefault(userEmail, List.of());
+        List<ThreadDetailResponse> currentData = userCache.getIfPresent(userEmail);
         if(query == null || query.isBlank()){
+            return List.of();
+        }
+        if(currentData==null || currentData.isEmpty()){
             return List.of();
         }
         String lowerQuery = query.toLowerCase();
