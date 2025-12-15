@@ -1,44 +1,71 @@
 package com.example.aimailbox.service;
 
+import com.example.aimailbox.dto.response.ListThreadResponse;
 import com.example.aimailbox.dto.response.MessageDetailResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
+import com.example.aimailbox.model.User;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import me.xdrop.fuzzywuzzy.FuzzySearch;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+import reactor.util.context.Context;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
-@FieldDefaults(level = AccessLevel.PRIVATE)
+@FieldDefaults(level = AccessLevel.PRIVATE,makeFinal = true)
 @RequiredArgsConstructor
+@Slf4j
 public class EmailCacheService {
     ProxyMailService proxyMailService;
-    final List<ThreadDetailResponse> cachedThreads = new CopyOnWriteArrayList<>();
-    public Mono<Void> syncRecentMails(){
-        return proxyMailService.getListThreads(50,null,null,null,false)
-                .flatMapMany(responses -> Flux.fromIterable(responses.getThreads()))
-                .flatMap(shortThread-> proxyMailService.getThreadDetail(shortThread.getId()))
-                .collectList()
-                .doOnNext(details->{
-                    cachedThreads.clear();
-                    cachedThreads.addAll(details);
+    AtomicReference<List<ThreadDetailResponse>> cachedThreads = new AtomicReference<>(List.of());
+    public Mono<Void> syncRecentMails(User user) {
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
+        return proxyMailService.getListThreads(50, null, null, null, false)
+                .flatMapMany(response -> {
+                    if (response == null || response.getThreads() == null || response.getThreads().isEmpty()) {
+                        return Flux.empty();
+                    }
+                    return Flux.fromIterable(response.getThreads());
                 })
-                .then();
+
+                .parallel()
+                .runOn(Schedulers.boundedElastic())
+                .flatMap(shortThread -> proxyMailService.getThreadDetail(shortThread.getId())
+                        .onErrorResume(e -> {
+                            return Mono.empty();
+                        }))
+                .sequential()
+                .collectList()
+                .doOnNext(details -> {
+                    if (details.isEmpty()) {
+                        log.warn("SYNC COMPLETED but result list is EMPTY. Check errors above.");
+                    } else {
+                        cachedThreads.set(details);
+                    }
+                })
+                .doOnError(e -> log.error("SYNC FAILED with fatal error: ", e)) // Bắt lỗi nếu getListThreads chết
+                .then()
+                .contextWrite(Context.of(Authentication.class, auth));
     }
     public List<ThreadDetailResponse> searchInCache(String query){
-        if(query == null||query.isBlank()){
-            return cachedThreads;
+        List<ThreadDetailResponse> currentData = cachedThreads.get();
+        if(query == null || query.isBlank()){
+            return currentData;
         }
         String lowerQuery = query.toLowerCase();
-        return cachedThreads.stream()
+        return currentData.stream()
                 .map(thread-> {
                     int maxScoreOfThread = 0;
                     for (MessageDetailResponse message : thread.getMessages()) {
@@ -53,9 +80,9 @@ public class EmailCacheService {
                             maxScoreOfThread = messageMaxScore;
                         }
                     }
-                     return new ThreadScoreWrapper(thread, maxScoreOfThread);
+                    return new ThreadScoreWrapper(thread, maxScoreOfThread);
                 })
-                .filter(wrapper->wrapper.score>60)
+                .filter(wrapper -> wrapper.score > 60)
                 .sorted(Comparator.comparingInt(ThreadScoreWrapper::getScore).reversed())
                 .map(ThreadScoreWrapper::getThread)
                 .toList();
@@ -67,4 +94,5 @@ public class EmailCacheService {
         ThreadDetailResponse thread;
         int score;
     }
+
 }
