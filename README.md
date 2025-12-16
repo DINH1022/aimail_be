@@ -86,63 +86,75 @@ A full-stack email dashboard application with React frontend and Spring Boot bac
    Frontend runs on `http://localhost:5173`
    Backend runs on `http://localhost:8080`
 
-## Public Hosting URL and Deployment
+---
 
-### Live URLs
+## Sorting and Filtering
 
-- **Frontend:** [https://ai-email-chi.vercel.app/](https://ai-email-chi.vercel.app/)
-- **Backend API:** [https://aiemail-twfi.onrender.com/](https://aiemail-twfi.onrender.com/)
+Simple sorting and filtering controls that apply to cards within Kanban columns.
 
-### Reproduce Deployment Locally
+### API Endpoint
 
-#### Docker Deployment (Backend)
+`GET /api/emails`
 
-1. **Create Dockerfile:**
+### Parameters
 
-   ```dockerfile
-   FROM maven:3.9-eclipse-temurin-17 AS build
-   WORKDIR /app
-   COPY pom.xml .
-   COPY src ./src
-   RUN mvn clean package -DskipTests
+| Parameter        | Type    | Description                                                                                              |
+| :--------------- | :------ | :------------------------------------------------------------------------------------------------------- |
+| `label`          | String  | **Recommended.** Filter by Gmail Label ID or Name (e.g., `INBOX`, `Label_36`). Supports dynamic columns. |
+| `unreadOnly`     | Boolean | Filter for Unread emails. Pass `true` to show only unread items.                                         |
+| `hasAttachments` | Boolean | Filter for emails with Attachments. Pass `true` to show only items with files attached.                  |
+| `sort`           | String  | Sorting criteria: `newest`, `oldest`, `sender`. Default: `newest`.                                       |
 
-   FROM eclipse-temurin:17-jre-alpine
-   WORKDIR /app
-   COPY --from=build /app/target/AImailbox-0.0.1-SNAPSHOT.jar app.jar
-   EXPOSE 8080
-   ENTRYPOINT ["java", "-jar", "app.jar"]
-   ```
+### Usage Examples
 
-2. **Build and run:**
+- **Inbox (Newest first):**
+  `GET /api/emails?label=INBOX&sort=newest`
 
-   ```bash
-   docker build -t aimailbox:latest .
+- **ToDo Column (Sorted by Sender):**
+  `GET /api/emails?label=Label_36&sort=sender`
 
-   docker run -e JWT_SECRET=your-secret \
-              -e SPRING_PROFILES_ACTIVE=prod \
-              -e SPRING_DATASOURCE_URL=jdbc:postgresql://host:5432/db \
-              -p 8080:8080 aimailbox:latest
-   ```
+- **Unread in Inbox:**
+  `GET /api/emails?label=INBOX&unreadOnly=true`
 
-#### Deploy to Render (Backend)
+- **Process Attachments (Filter by Label, hasAttachments & Sort):**
+  `GET /api/emails?label=INBOX&hasAttachments=true&sort=oldest`
 
-1. Create Web Service on Render
-2. Connect Git repository
-3. Build command: `mvn clean package -DskipTests`
-4. Start command: `java -jar target/AImailbox-0.0.1-SNAPSHOT.jar`
-5. Add environment variables: `JWT_SECRET`, `SPRING_DATASOURCE_URL`, etc.
+- **Complex Filter (Unread + Attachments + Sort by Sender):**
+  `GET /api/emails?label=INBOX&unreadOnly=true&hasAttachments=true&sort=sender`
 
-#### Deploy to Vercel (Frontend)
+---
 
-```bash
-# Install Vercel CLI
-npm i -g vercel
+## Snooze / Deferral Feature
 
-# Deploy
-vercel --prod
-```
+This project includes an email "snooze" (deferral) workflow that lets users postpone emails until a specified time. The workflow is implemented as a lightweight workflow DB that complements the Gmail/proxy data.
 
-Or connect GitHub repository in Vercel dashboard for automatic deployments.
+Overview
+
+- Users choose a snooze time from the UI (quick options or a custom datetime). The backend stores a workflow record referencing the email's `threadId` with `status = SNOOZED` and `snoozedUntil` set to the chosen time.
+- A scheduled task runs periodically (every 60 seconds in development) to restore snoozed emails whose `snoozedUntil` has passed. Restoring sets the workflow `status` back to `INBOX` (or a prior state) and clears `snoozedUntil`.
+
+API Endpoints (backend)
+
+- `POST /api/emails/thread/{threadId}/snooze` — Create or update a workflow record for the given `threadId` and set a snooze timestamp. Request body should include an ISO-8601 timestamp (e.g. `{"snoozeTime":"2025-12-10T08:00:00Z"}`).
+- `POST /api/emails/{id}/unsnooze` — Remove snooze state from a workflow record (used when user unsnoozes manually).
+- `GET /api/emails?status=SNOOZED` — List workflow records currently snoozed (used by the UI to build the Snoozed mailbox/column).
+- `PATCH /api/emails/{id}/read` and `PATCH /api/emails/{id}/starred` — Update workflow-managed flags.
+
+Behavior and Merge Rules
+
+- The application merges two data sources when rendering lists and details:
+  - Gmail/proxy data: authoritative for message content, labels, and timestamps.
+  - Workflow DB: authoritative for workflow-managed fields (status, snoozedUntil, summary), but may be `null` for some flags.
+- To avoid overwriting Gmail-derived states (read/starred) when no workflow record exists, the backend model uses nullable flags for `isRead` and `isStarred`. The merge logic uses `workflowValue ?? gmailValue` so Gmail values are preserved unless workflow explicitly overrides them.
+- To prevent large numbers of 404s during list prefetch, the frontend performs a batch fetch of workflow records and merges them by `threadId` at the list level rather than calling the workflow endpoint per thread.
+
+Implementation Notes (developer)
+
+- The scheduled restore job runs every 60 seconds by default in development (`@Scheduled(fixedRate = 60000)`). Adjust the interval in production as needed.
+- The backend will create a workflow record when a user snoozes an email or when UI code explicitly requests one. Consider adding a dedicated `POST /api/emails/thread/{threadId}/create` endpoint if you want a clean way to create workflow records without using the snooze endpoint as a workaround.
+- The `snooze` endpoint accepts ISO timestamps in the request body; the server stores timestamps in UTC and computes comparisons using `Instant`.
+
+---
 
 ## Token Storage and Security
 
@@ -241,6 +253,8 @@ If refresh fails → Clear tokens → Redirect to login
 - [ ] Rotate JWT signing keys periodically
 - [ ] Use secure cookies with HttpOnly flag in production
 
+---
+
 ## Third-Party Services
 
 ### Google OAuth
@@ -255,32 +269,60 @@ If refresh fails → Clear tokens → Redirect to login
 
 ---
 
-## Snooze / Deferral Feature
+## Public Hosting URL and Deployment
 
-This project includes an email "snooze" (deferral) workflow that lets users postpone emails until a specified time. The workflow is implemented as a lightweight workflow DB that complements the Gmail/proxy data.
+### Live URLs
 
-Overview
+- **Frontend:** [https://ai-email-chi.vercel.app/](https://ai-email-chi.vercel.app/)
+- **Backend API:** [https://aiemail-twfi.onrender.com/](https://aiemail-twfi.onrender.com/)
 
-- Users choose a snooze time from the UI (quick options or a custom datetime). The backend stores a workflow record referencing the email's `threadId` with `status = SNOOZED` and `snoozedUntil` set to the chosen time.
-- A scheduled task runs periodically (every 60 seconds in development) to restore snoozed emails whose `snoozedUntil` has passed. Restoring sets the workflow `status` back to `INBOX` (or a prior state) and clears `snoozedUntil`.
+### Reproduce Deployment Locally
 
-API Endpoints (backend)
+#### Docker Deployment (Backend)
 
-- `POST /api/emails/thread/{threadId}/snooze` — Create or update a workflow record for the given `threadId` and set a snooze timestamp. Request body should include an ISO-8601 timestamp (e.g. `{"snoozeTime":"2025-12-10T08:00:00Z"}`).
-- `POST /api/emails/{id}/unsnooze` — Remove snooze state from a workflow record (used when user unsnoozes manually).
-- `GET /api/emails?status=SNOOZED` — List workflow records currently snoozed (used by the UI to build the Snoozed mailbox/column).
-- `PATCH /api/emails/{id}/read` and `PATCH /api/emails/{id}/starred` — Update workflow-managed flags.
+1. **Create Dockerfile:**
 
-Behavior and Merge Rules
+   ```dockerfile
+   FROM maven:3.9-eclipse-temurin-17 AS build
+   WORKDIR /app
+   COPY pom.xml .
+   COPY src ./src
+   RUN mvn clean package -DskipTests
 
-- The application merges two data sources when rendering lists and details:
-  - Gmail/proxy data: authoritative for message content, labels, and timestamps.
-  - Workflow DB: authoritative for workflow-managed fields (status, snoozedUntil, summary), but may be `null` for some flags.
-- To avoid overwriting Gmail-derived states (read/starred) when no workflow record exists, the backend model uses nullable flags for `isRead` and `isStarred`. The merge logic uses `workflowValue ?? gmailValue` so Gmail values are preserved unless workflow explicitly overrides them.
-- To prevent large numbers of 404s during list prefetch, the frontend performs a batch fetch of workflow records and merges them by `threadId` at the list level rather than calling the workflow endpoint per thread.
+   FROM eclipse-temurin:17-jre-alpine
+   WORKDIR /app
+   COPY --from=build /app/target/AImailbox-0.0.1-SNAPSHOT.jar app.jar
+   EXPOSE 8080
+   ENTRYPOINT ["java", "-jar", "app.jar"]
+   ```
 
-Implementation Notes (developer)
+2. **Build and run:**
 
-- The scheduled restore job runs every 60 seconds by default in development (`@Scheduled(fixedRate = 60000)`). Adjust the interval in production as needed.
-- The backend will create a workflow record when a user snoozes an email or when UI code explicitly requests one. Consider adding a dedicated `POST /api/emails/thread/{threadId}/create` endpoint if you want a clean way to create workflow records without using the snooze endpoint as a workaround.
-- The `snooze` endpoint accepts ISO timestamps in the request body; the server stores timestamps in UTC and computes comparisons using `Instant`.
+   ```bash
+   docker build -t aimailbox:latest .
+
+   docker run -e JWT_SECRET=your-secret \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              -e SPRING_DATASOURCE_URL=jdbc:postgresql://host:5432/db \
+              -p 8080:8080 aimailbox:latest
+   ```
+
+#### Deploy to Render (Backend)
+
+1. Create Web Service on Render
+2. Connect Git repository
+3. Build command: `mvn clean package -DskipTests`
+4. Start command: `java -jar target/AImailbox-0.0.1-SNAPSHOT.jar`
+5. Add environment variables: `JWT_SECRET`, `SPRING_DATASOURCE_URL`, etc.
+
+#### Deploy to Vercel (Frontend)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel --prod
+```
+
+Or connect GitHub repository in Vercel dashboard for automatic deployments.
