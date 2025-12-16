@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.domain.Sort;
 
 import java.time.Instant;
 import java.util.List;
@@ -19,11 +20,11 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     
     List<Email> findByUserAndStatus(User user, EmailStatus status);
 
-    List<Email> findByUserAndStatus(User user, EmailStatus status, org.springframework.data.domain.Sort sort);
+    List<Email> findByUserAndStatus(User user, EmailStatus status, Sort sort);
     
     List<Email> findByUserOrderByReceivedAtDesc(User user);
 
-    List<Email> findByUser(User user, org.springframework.data.domain.Sort sort);
+    List<Email> findByUser(User user, Sort sort);
     
     @Query("SELECT e FROM Email e WHERE e.user = :user AND e.status = 'SNOOZED' AND e.snoozedUntil <= :now")
     List<Email> findSnoozedEmailsToRestore(@Param("user") User user, @Param("now") Instant now);
@@ -33,5 +34,12 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     
     long countByUserAndStatus(User user, EmailStatus status);
 
-    List<Email> findByUserAndLabelIdsContaining(User user, String labelId, org.springframework.data.domain.Sort sort);
+    List<Email> findByUserAndLabelIdsContaining(User user, String labelId, Sort sort);
+
+    // Filter by Unread Status
+    List<Email> findByUserAndLabelIdsContainingAndIsRead(User user, String labelId, Boolean isRead, Sort sort);
+    
+    List<Email> findByUserAndStatusAndIsRead(User user, EmailStatus status, Boolean isRead, Sort sort);
+    
+    List<Email> findByUserAndIsRead(User user, Boolean isRead, Sort sort);
 }

@@ -28,16 +28,17 @@ public class EmailController {
     public ResponseEntity<List<EmailResponse>> getAllEmails(
             @RequestParam(required = false) String label,
             @RequestParam(required = false) EmailStatus status,
+            @RequestParam(required = false, defaultValue = "false") Boolean unreadOnly,
             @RequestParam(required = false, defaultValue = "newest") String sort) {
         
         if (label != null && !label.isEmpty()) {
-            return ResponseEntity.ok(emailService.getEmailsByLabel(label, sort));
+            return ResponseEntity.ok(emailService.getEmailsByLabel(label, sort, unreadOnly));
         }
 
         if (status != null) {
-            return ResponseEntity.ok(emailService.getEmailsByStatus(status, sort));
+            return ResponseEntity.ok(emailService.getEmailsByStatus(status, sort, unreadOnly));
         }
-        return ResponseEntity.ok(emailService.getAllEmails(sort));
+        return ResponseEntity.ok(emailService.getAllEmails(sort, unreadOnly));
     }
 
     /**
@@ -66,7 +67,7 @@ public class EmailController {
     public ResponseEntity<EmailResponse> getEmailById(@PathVariable Long id) {
         // Temporarily use unsnoozeEmail logic to get the email
         // This should be replaced with a proper getById method
-        EmailResponse email = emailService.getEmailsByStatus(null, null).stream()
+        EmailResponse email = emailService.getEmailsByStatus(null, null, false).stream()
                 .filter(e -> e.getId().equals(id))
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("Email not found"));

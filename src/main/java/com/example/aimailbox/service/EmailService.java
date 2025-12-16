@@ -69,9 +69,17 @@ public class EmailService {
     /**
      * Get all emails for current user
      */
-    public List<EmailResponse> getAllEmails(String sortOption) {
+    /**
+     * Get all emails for current user
+     */
+    public List<EmailResponse> getAllEmails(String sortOption, Boolean unreadOnly) {
         User user = getCurrentUser();
-        List<Email> emails = emailRepository.findByUser(user, getSort(sortOption));
+        List<Email> emails;
+        if (Boolean.TRUE.equals(unreadOnly)) {
+            emails = emailRepository.findByUserAndIsRead(user, false, getSort(sortOption));
+        } else {
+            emails = emailRepository.findByUser(user, getSort(sortOption));
+        }
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -83,9 +91,14 @@ public class EmailService {
     /**
      * Get emails by status
      */
-    public List<EmailResponse> getEmailsByStatus(EmailStatus status, String sortOption) {
+    public List<EmailResponse> getEmailsByStatus(EmailStatus status, String sortOption, Boolean unreadOnly) {
         User user = getCurrentUser();
-        List<Email> emails = emailRepository.findByUserAndStatus(user, status, getSort(sortOption));
+        List<Email> emails;
+        if (Boolean.TRUE.equals(unreadOnly)) {
+            emails = emailRepository.findByUserAndStatusAndIsRead(user, status, false, getSort(sortOption));
+        } else {
+            emails = emailRepository.findByUserAndStatus(user, status, getSort(sortOption));
+        }
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -94,9 +107,14 @@ public class EmailService {
     /**
      * Get emails by label (string)
      */
-    public List<EmailResponse> getEmailsByLabel(String labelId, String sortOption) {
+    public List<EmailResponse> getEmailsByLabel(String labelId, String sortOption, Boolean unreadOnly) {
         User user = getCurrentUser();
-        List<Email> emails = emailRepository.findByUserAndLabelIdsContaining(user, labelId, getSort(sortOption));
+        List<Email> emails;
+        if (Boolean.TRUE.equals(unreadOnly)) {
+            emails = emailRepository.findByUserAndLabelIdsContainingAndIsRead(user, labelId, false, getSort(sortOption));
+        } else {
+            emails = emailRepository.findByUserAndLabelIdsContaining(user, labelId, getSort(sortOption));
+        }
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
