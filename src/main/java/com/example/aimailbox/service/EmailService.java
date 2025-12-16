@@ -72,14 +72,23 @@ public class EmailService {
     /**
      * Get all emails for current user
      */
-    public List<EmailResponse> getAllEmails(String sortOption, Boolean unreadOnly) {
+    public List<EmailResponse> getAllEmails(String sortOption, Boolean unreadOnly, Boolean hasAttachments) {
         User user = getCurrentUser();
         List<Email> emails;
-        if (Boolean.TRUE.equals(unreadOnly)) {
+        
+        boolean isUnread = Boolean.TRUE.equals(unreadOnly);
+        boolean isAttachments = Boolean.TRUE.equals(hasAttachments);
+
+        if (isUnread && isAttachments) {
+            emails = emailRepository.findByUserAndIsReadAndHasAttachments(user, false, true, getSort(sortOption));
+        } else if (isUnread) {
             emails = emailRepository.findByUserAndIsRead(user, false, getSort(sortOption));
+        } else if (isAttachments) {
+            emails = emailRepository.findByUserAndHasAttachments(user, true, getSort(sortOption));
         } else {
             emails = emailRepository.findByUser(user, getSort(sortOption));
         }
+        
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -91,14 +100,23 @@ public class EmailService {
     /**
      * Get emails by status
      */
-    public List<EmailResponse> getEmailsByStatus(EmailStatus status, String sortOption, Boolean unreadOnly) {
+    public List<EmailResponse> getEmailsByStatus(EmailStatus status, String sortOption, Boolean unreadOnly, Boolean hasAttachments) {
         User user = getCurrentUser();
         List<Email> emails;
-        if (Boolean.TRUE.equals(unreadOnly)) {
+        
+        boolean isUnread = Boolean.TRUE.equals(unreadOnly);
+        boolean isAttachments = Boolean.TRUE.equals(hasAttachments);
+
+        if (isUnread && isAttachments) {
+            emails = emailRepository.findByUserAndStatusAndIsReadAndHasAttachments(user, status, false, true, getSort(sortOption));
+        } else if (isUnread) {
             emails = emailRepository.findByUserAndStatusAndIsRead(user, status, false, getSort(sortOption));
+        } else if (isAttachments) {
+            emails = emailRepository.findByUserAndStatusAndHasAttachments(user, status, true, getSort(sortOption));
         } else {
             emails = emailRepository.findByUserAndStatus(user, status, getSort(sortOption));
         }
+        
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -107,14 +125,23 @@ public class EmailService {
     /**
      * Get emails by label (string)
      */
-    public List<EmailResponse> getEmailsByLabel(String labelId, String sortOption, Boolean unreadOnly) {
+    public List<EmailResponse> getEmailsByLabel(String labelId, String sortOption, Boolean unreadOnly, Boolean hasAttachments) {
         User user = getCurrentUser();
         List<Email> emails;
-        if (Boolean.TRUE.equals(unreadOnly)) {
+        
+        boolean isUnread = Boolean.TRUE.equals(unreadOnly);
+        boolean isAttachments = Boolean.TRUE.equals(hasAttachments);
+
+        if (isUnread && isAttachments) {
+            emails = emailRepository.findByUserAndLabelIdsContainingAndIsReadAndHasAttachments(user, labelId, false, true, getSort(sortOption));
+        } else if (isUnread) {
             emails = emailRepository.findByUserAndLabelIdsContainingAndIsRead(user, labelId, false, getSort(sortOption));
+        } else if (isAttachments) {
+            emails = emailRepository.findByUserAndLabelIdsContainingAndHasAttachments(user, labelId, true, getSort(sortOption));
         } else {
             emails = emailRepository.findByUserAndLabelIdsContaining(user, labelId, getSort(sortOption));
         }
+        
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -262,6 +289,15 @@ public class EmailService {
          if (labelIds != null && !labelIds.isEmpty()) {
              labelIdsString = String.join(",", labelIds);
          }
+         
+         // Check for attachments
+         boolean hasAttachments = false;
+         for (var msg : threadDetail.getMessages()) {
+             if (msg.getAttachments() != null && !msg.getAttachments().isEmpty()) {
+                 hasAttachments = true;
+                 break;
+             }
+         }
 
          // Parse date
          Instant receivedAt = Instant.now();
@@ -288,6 +324,7 @@ public class EmailService {
          email.setLabelIds(labelIdsString); 
          email.setIsRead(isRead);
          email.setIsStarred(isStarred);
+         email.setHasAttachments(hasAttachments);
          email.setReceivedAt(receivedAt);
          
          return emailRepository.save(email);
@@ -419,6 +456,7 @@ public class EmailService {
                 .snoozedUntil(email.getSnoozedUntil())
                 .isRead(email.getIsRead())
                 .isStarred(email.getIsStarred())
+                .hasAttachments(email.getHasAttachments())
                 .receivedAt(email.getReceivedAt())
                 .createdAt(email.getCreatedAt())
                 .updatedAt(email.getUpdatedAt())

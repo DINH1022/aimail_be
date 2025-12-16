@@ -26,6 +26,7 @@ public class EmailResponse {
     private Instant snoozedUntil;
     private Boolean isRead;
     private Boolean isStarred;
+    private Boolean hasAttachments;
     private Instant receivedAt;
     private Instant createdAt;
     private Instant updatedAt;

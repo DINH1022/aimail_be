@@ -42,4 +42,16 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     List<Email> findByUserAndStatusAndIsRead(User user, EmailStatus status, Boolean isRead, Sort sort);
     
     List<Email> findByUserAndIsRead(User user, Boolean isRead, Sort sort);
+
+    List<Email> findByUserAndHasAttachments(User user, Boolean hasAttachments, Sort sort);
+    
+    List<Email> findByUserAndIsReadAndHasAttachments(User user, Boolean isRead, Boolean hasAttachments, Sort sort);
+    
+    List<Email> findByUserAndLabelIdsContainingAndHasAttachments(User user, String labelId, Boolean hasAttachments, Sort sort);
+
+    List<Email> findByUserAndLabelIdsContainingAndIsReadAndHasAttachments(User user, String labelId, Boolean isRead, Boolean hasAttachments, Sort sort);
+    
+    List<Email> findByUserAndStatusAndHasAttachments(User user, EmailStatus status, Boolean hasAttachments, Sort sort);
+
+    List<Email> findByUserAndStatusAndIsReadAndHasAttachments(User user, EmailStatus status, Boolean isRead, Boolean hasAttachments, Sort sort);
 }

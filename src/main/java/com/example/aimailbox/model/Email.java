@@ -68,6 +68,9 @@ public class Email {
 
     @Column(name = "is_starred")
     private Boolean isStarred; 
+    
+    @Column(name = "has_attachments")
+    private Boolean hasAttachments;
 
     @Column(name = "received_at")
     private Instant receivedAt;
