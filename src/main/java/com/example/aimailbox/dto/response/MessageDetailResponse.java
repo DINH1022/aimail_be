@@ -25,5 +25,6 @@ public class MessageDetailResponse {
     String snippet;
     String textBody;
     String htmlBody;
+    List<String> labelIds;
     List<Attachment> attachments = new ArrayList<>();
 }

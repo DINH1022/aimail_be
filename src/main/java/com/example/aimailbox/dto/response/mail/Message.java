@@ -11,6 +11,7 @@ import lombok.experimental.FieldDefaults;
 public class Message {
     private String id;
     private String threadId;
+    private java.util.List<String> labelIds;
     private String snippet;
     private MessagePart payload;
 }

@@ -3,6 +3,7 @@ package com.example.aimailbox.service;
 import com.example.aimailbox.dto.request.SnoozeEmailRequest;
 import com.example.aimailbox.dto.request.UpdateEmailStatusRequest;
 import com.example.aimailbox.dto.response.EmailResponse;
+import com.example.aimailbox.dto.response.ThreadDetailResponse; // Add missing import
 import com.example.aimailbox.model.Email;
 import com.example.aimailbox.model.EmailStatus;
 import com.example.aimailbox.model.User;
@@ -15,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Sort;
 
 import java.time.Instant;
 import java.util.List;
@@ -48,9 +50,28 @@ public class EmailService {
     /**
      * Get all emails for current user
      */
-    public List<EmailResponse> getAllEmails() {
+    private Sort getSort(String sortOption) {
+        if (sortOption == null) {
+            return Sort.by(Sort.Direction.DESC, "receivedAt");
+        }
+
+        switch (sortOption.toLowerCase()) {
+            case "oldest":
+                return Sort.by(Sort.Direction.ASC, "receivedAt");
+            case "sender":
+                return Sort.by(Sort.Direction.ASC, "from");
+            case "newest":
+            default:
+                return Sort.by(Sort.Direction.DESC, "receivedAt");
+        }
+    }
+
+    /**
+     * Get all emails for current user
+     */
+    public List<EmailResponse> getAllEmails(String sortOption) {
         User user = getCurrentUser();
-        List<Email> emails = emailRepository.findByUserOrderByReceivedAtDesc(user);
+        List<Email> emails = emailRepository.findByUser(user, getSort(sortOption));
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -59,9 +80,23 @@ public class EmailService {
     /**
      * Get emails by status
      */
-    public List<EmailResponse> getEmailsByStatus(EmailStatus status) {
+    /**
+     * Get emails by status
+     */
+    public List<EmailResponse> getEmailsByStatus(EmailStatus status, String sortOption) {
         User user = getCurrentUser();
-        List<Email> emails = emailRepository.findByUserAndStatus(user, status);
+        List<Email> emails = emailRepository.findByUserAndStatus(user, status, getSort(sortOption));
+        return emails.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Get emails by label (string)
+     */
+    public List<EmailResponse> getEmailsByLabel(String labelId, String sortOption) {
+        User user = getCurrentUser();
+        List<Email> emails = emailRepository.findByUserAndLabelIdsContaining(user, labelId, getSort(sortOption));
         return emails.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -175,48 +210,69 @@ public class EmailService {
 
     /**
      * Sync email from Gmail to database
-     * Called automatically when email is needed but not found locally
+     * Made public to allow bulk sync
      */
-    private Email syncEmailFromGmail(User user, String threadId) {
+    public Email syncEmailFromGmail(User user, String threadId) {
         try {
             // Fetch thread detail from Gmail
-            var threadDetail = proxyMailService.getThreadDetail(threadId).block();
-            
-            if (threadDetail == null || threadDetail.getMessages() == null || threadDetail.getMessages().isEmpty()) {
-                throw new RuntimeException("Email not found in Gmail: " + threadId);
-            }
-            
-            // Extract first message data
-            var firstMsg = threadDetail.getMessages().get(0);
-            
-            // Determine read/starred status from labelIds
-            var labelIds = threadDetail.getLabelIds();
-            boolean isRead = labelIds == null || !labelIds.contains("UNREAD");
-            boolean isStarred = labelIds != null && labelIds.contains("STARRED");
-            
-            // Create new email entity
-            Email email = Email.builder()
-                    .user(user)
-                    .threadId(threadId)
-                    .from(firstMsg.getFrom())
-                    .to(firstMsg.getTo())
-                    .subject(firstMsg.getSubject())
-                    .snippet(threadDetail.getSnippet())
-                    .body(firstMsg.getTextBody() != null ? firstMsg.getTextBody() : firstMsg.getHtmlBody())
-                    .status(EmailStatus.INBOX)
-                    .isRead(isRead)
-                    .isStarred(isStarred)
-                    .receivedAt(Instant.now())
-                    .build();
-            
-            email = emailRepository.save(email);
-            log.info("Successfully synced email from Gmail: {} (read={}, starred={})", threadId, isRead, isStarred);
-            
-            return email;
+            ThreadDetailResponse threadDetail = proxyMailService.getThreadDetail(threadId).block();
+            return saveThreadToDatabase(user, threadDetail);
         } catch (Exception e) {
             log.error("Failed to sync email from Gmail: {}", threadId, e);
             throw new RuntimeException("Failed to sync email from Gmail: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Helper to save a thread response to database
+     */
+    @Transactional
+    public Email saveThreadToDatabase(User user, ThreadDetailResponse threadDetail) {
+         if (threadDetail == null || threadDetail.getMessages() == null || threadDetail.getMessages().isEmpty()) {
+             return null;
+         }
+         
+         String threadId = threadDetail.getId();
+         
+         var firstMsg = threadDetail.getMessages().get(0);
+         
+         var labelIds = threadDetail.getLabelIds();
+         boolean isRead = labelIds == null || !labelIds.contains("UNREAD");
+         boolean isStarred = labelIds != null && labelIds.contains("STARRED"); 
+
+         String labelIdsString = null;
+         if (labelIds != null && !labelIds.isEmpty()) {
+             labelIdsString = String.join(",", labelIds);
+         }
+
+         // Parse date
+         Instant receivedAt = Instant.now();
+         if (firstMsg.getDate() != null) {
+             try {
+                receivedAt = Instant.parse(firstMsg.getDate());
+             } catch (Exception e) {
+                 // Fallback
+             }
+         }
+         
+         Email email = emailRepository.findByUserAndThreadId(user, threadId)
+                 .orElse(Email.builder()
+                         .user(user)
+                         .threadId(threadId)
+                         .build());
+         
+         email.setFrom(firstMsg.getFrom());
+         email.setTo(firstMsg.getTo());
+         email.setSubject(firstMsg.getSubject());
+         email.setSnippet(threadDetail.getSnippet());
+         email.setBody(firstMsg.getTextBody() != null ? firstMsg.getTextBody() : firstMsg.getHtmlBody());
+         email.setStatus(EmailStatus.INBOX); 
+         email.setLabelIds(labelIdsString); 
+         email.setIsRead(isRead);
+         email.setIsStarred(isStarred);
+         email.setReceivedAt(receivedAt);
+         
+         return emailRepository.save(email);
     }
 
     /**

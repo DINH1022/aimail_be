@@ -60,6 +60,9 @@ public class Email {
     @Enumerated(EnumType.STRING)
     private EmailStatus previousStatus;
 
+    @Column(columnDefinition = "TEXT")
+    private String labelIds; 
+
     @Column(name = "is_read")
     private Boolean isRead; 
 

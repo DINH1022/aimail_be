@@ -282,10 +282,19 @@ public class ProxyMailService {
                 .messages(new ArrayList<>())
                 .build();
         if (threadDetail.getMessages() != null) {
+            Set<String> allLabelIds = new HashSet<>();
+            if (threadDetailResponse.getLabelIds() != null) {
+                allLabelIds.addAll(threadDetailResponse.getLabelIds());
+            }
+            
             for (Message message : threadDetail.getMessages()) {
                 MessageDetailResponse messageDetailResponse = parseMessage(message);
                 threadDetailResponse.getMessages().add(messageDetailResponse);
+                if (messageDetailResponse.getLabelIds() != null) {
+                    allLabelIds.addAll(messageDetailResponse.getLabelIds());
+                }
             }
+            threadDetailResponse.setLabelIds(new ArrayList<>(allLabelIds));
         }
         return threadDetailResponse;
     }
@@ -295,6 +304,7 @@ public class ProxyMailService {
                 .id(message.getId())
                 .threadId(message.getThreadId())
                 .snippet(message.getSnippet())
+                .labelIds(message.getLabelIds())
                 .attachments(new ArrayList<>())
                 .build();
         if (message.getPayload() != null) {

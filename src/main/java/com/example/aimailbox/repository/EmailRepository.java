@@ -18,8 +18,12 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     Optional<Email> findByUserAndThreadId(User user, String threadId);
     
     List<Email> findByUserAndStatus(User user, EmailStatus status);
+
+    List<Email> findByUserAndStatus(User user, EmailStatus status, org.springframework.data.domain.Sort sort);
     
     List<Email> findByUserOrderByReceivedAtDesc(User user);
+
+    List<Email> findByUser(User user, org.springframework.data.domain.Sort sort);
     
     @Query("SELECT e FROM Email e WHERE e.user = :user AND e.status = 'SNOOZED' AND e.snoozedUntil <= :now")
     List<Email> findSnoozedEmailsToRestore(@Param("user") User user, @Param("now") Instant now);
@@ -28,4 +32,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     List<Email> findAllSnoozedEmailsToRestore(@Param("now") Instant now);
     
     long countByUserAndStatus(User user, EmailStatus status);
+
+    List<Email> findByUserAndLabelIdsContaining(User user, String labelId, org.springframework.data.domain.Sort sort);
 }
