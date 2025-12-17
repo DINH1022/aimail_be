@@ -18,7 +18,7 @@ public class CorsConfig {
         corsConfig.setAllowedOriginPatterns(List.of(
                 "https://*.vercel.app",
                 "https://aimail-fsze5u387-vinhs-projects-373b8979.vercel.app",
-                "https://aimail-ek1x28fyr-vinhs-projects-373b8979.vercel.app/",
+                "https://aimail-rdcdzbplk-vinhs-projects-373b8979.vercel.app/",
                 "http://localhost:5173",
                 "http://localhost:5174"
         ));
