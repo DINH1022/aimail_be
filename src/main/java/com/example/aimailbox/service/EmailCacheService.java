@@ -57,17 +57,9 @@ public class EmailCacheService {
                         log.warn("SYNC COMPLETED but result list is EMPTY. Check errors above.");
                     } else {
                         userCache.put(user.getEmail(), details);
-                        
-                        for (ThreadDetailResponse detail : details) {
-                            try {
-                                emailService.saveThreadToDatabase(user, detail);
-                            } catch (Exception e) {
-                                log.error("Failed to save thread to database during sync: {}", detail.getId(), e);
-                            }
-                        }
                     }
                 })
-                .doOnError(e -> log.error("SYNC FAILED with fatal error: ", e)) // Bắt lỗi nếu getListThreads chết
+                .doOnError(e -> log.error("SYNC FAILED with fatal error: ", e))
                 .then()
                 .contextWrite(Context.of(Authentication.class, auth));
     }

@@ -3,7 +3,9 @@ package com.example.aimailbox.model;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -74,6 +76,10 @@ public class Email {
 
     @Column(name = "received_at")
     private Instant receivedAt;
+
+    @Column(columnDefinition = "vector(768)")
+    @JdbcTypeCode(SqlTypes.VECTOR)
+    private PGvector embedding;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

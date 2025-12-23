@@ -23,8 +23,8 @@ google:
 
 # Frontend callback URL used by backend to redirect user after Google auth
 frontend:
-  #callback-url: http://localhost:5174/auth/google/callback
-  callback-url: https://aimail-rdcdzbplk-vinhs-projects-373b8979.vercel.app/auth/google/callback
+  callback-url: http://localhost:5174/auth/google/callback
+#  callback-url: https://aimail-rdcdzbplk-vinhs-projects-373b8979.vercel.app/auth/google/callback
 
 cors:
   # include deployed Vercel frontend plus local dev origins
