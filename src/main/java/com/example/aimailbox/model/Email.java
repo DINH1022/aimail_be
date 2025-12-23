@@ -65,7 +65,7 @@ public class Email {
     private EmailStatus previousStatus;
 
     @Column(columnDefinition = "TEXT")
-    private String labelIds; 
+    private String labelIds;
 
     @Column(name = "is_read")
     private Boolean isRead; 
@@ -82,6 +82,7 @@ public class Email {
     @Column(columnDefinition = "vector(768)")
     @JdbcTypeCode(SqlTypes.VECTOR)
     private float[] embedding;
+
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

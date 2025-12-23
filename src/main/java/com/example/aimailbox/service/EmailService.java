@@ -474,6 +474,7 @@ public class EmailService {
                 .isRead(email.getIsRead())
                 .isStarred(email.getIsStarred())
                 .hasAttachments(email.getHasAttachments())
+                .labelIds(email.getLabelIds())
                 .receivedAt(email.getReceivedAt())
                 .createdAt(email.getCreatedAt())
                 .updatedAt(email.getUpdatedAt())

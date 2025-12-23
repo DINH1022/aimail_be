@@ -27,6 +27,7 @@ public class EmailResponse {
     private Boolean isRead;
     private Boolean isStarred;
     private Boolean hasAttachments;
+    private String labelIds;
     private Instant receivedAt;
     private Instant createdAt;
     private Instant updatedAt;
