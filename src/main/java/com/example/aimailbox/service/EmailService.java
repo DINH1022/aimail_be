@@ -283,7 +283,7 @@ public class EmailService {
          String threadId = threadDetail.getId();
          
          var firstMsg = threadDetail.getMessages().get(0);
-         
+         String subject = firstMsg.getSubject() != null ? firstMsg.getSubject() : "(No Subject)";
          var labelIds = threadDetail.getLabelIds();
          boolean isRead = labelIds == null || !labelIds.contains("UNREAD");
          boolean isStarred = labelIds != null && labelIds.contains("STARRED"); 
@@ -292,16 +292,30 @@ public class EmailService {
          if (labelIds != null && !labelIds.isEmpty()) {
              labelIdsString = String.join(",", labelIds);
          }
-         
+        StringBuilder conversationBuilder = new StringBuilder();
          // Check for attachments
          boolean hasAttachments = false;
          for (var msg : threadDetail.getMessages()) {
              if (msg.getAttachments() != null && !msg.getAttachments().isEmpty()) {
                  hasAttachments = true;
-                 break;
              }
-         }
+             String sender = msg.getFrom() != null ? msg.getFrom() : "Unknown";
+             String rawBody = msg.getTextBody() != null ? msg.getTextBody() : msg.getHtmlBody();
+             String cleanBody = rawBody != null ? rawBody.replaceAll("\\<.*?\\>", "").trim() : "";
+             if (!cleanBody.isEmpty()) {
+                 conversationBuilder.append("\n[From: ").append(sender).append("]: ").append(cleanBody);
+             }
 
+         }
+        String fullConversation = conversationBuilder.toString();
+        String textToEmbed = "Subject: " + subject + "\nConversation:" +
+                (fullConversation.length() > 6000 ? fullConversation.substring(0, 6000) : fullConversation);
+        PGvector embedding = null;
+        try {
+            embedding = embeddingService.getEmbedding(textToEmbed).block();
+        } catch (Exception e) {
+            log.error("Failed to generate embedding for thread {}", threadId, e);
+        }
          // Parse date
          Instant receivedAt = Instant.now();
          if (firstMsg.getDate() != null) {
@@ -311,7 +325,6 @@ public class EmailService {
                  // Fallback
              }
          }
-         
          Email email = emailRepository.findByUserAndThreadId(user, threadId)
                  .orElse(Email.builder()
                          .user(user)
@@ -329,7 +342,9 @@ public class EmailService {
          email.setIsStarred(isStarred);
          email.setHasAttachments(hasAttachments);
          email.setReceivedAt(receivedAt);
-         
+        if (embedding != null) {
+            email.setEmbedding(embedding);
+        }
          return emailRepository.save(email);
     }
 
@@ -467,85 +482,7 @@ public class EmailService {
     }
 
 
-    @Transactional
-    public Email saveEmailToDatabase(User user, ThreadDetailResponse threadDetail) {
-        if (threadDetail == null || threadDetail.getMessages() == null || threadDetail.getMessages().isEmpty()) {
-            return null;
-        }
-        String threadId = threadDetail.getId();
-        var firstMsg = threadDetail.getMessages().get(0);
-        var labelIds = threadDetail.getLabelIds();
-        boolean isRead = labelIds == null || !labelIds.contains("UNREAD");
-        boolean isStarred = labelIds != null && labelIds.contains("STARRED");
 
-        String labelIdsString = null;
-        if (labelIds != null && !labelIds.isEmpty()) {
-            labelIdsString = String.join(",", labelIds);
-        }
-        boolean hasAttachments = false;
-        for (var msg : threadDetail.getMessages()) {
-            if (msg.getAttachments() != null && !msg.getAttachments().isEmpty()) {
-                hasAttachments = true;
-                break;
-            }
-        }
-
-        // --- PHẦN MỚI: LOOP QUA TIN NHẮN ĐỂ GỘP NỘI DUNG & TÌM NGÀY MỚI NHẤT ---
-        StringBuilder fullConversation = new StringBuilder();
-        Instant latestDate = null; // Dùng để tìm ngày mới nhất trong thread
-
-        for (var msg : threadDetail.getMessages()) {
-            String sender = msg.getFrom() != null ? msg.getFrom() : "Unknown";
-            String rawBody = msg.getTextBody() != null ? msg.getTextBody() : msg.getHtmlBody();
-            String cleanBody = rawBody != null ? rawBody.replaceAll("\\<.*?\\>", "").trim() : "";
-
-            if (!cleanBody.isEmpty()) {
-                fullConversation.append("\n[From: ").append(sender).append("]: ").append(cleanBody);
-            }
-            Instant msgDate = parseGmailDate(msg.getDate());
-            if (latestDate == null || msgDate.isAfter(latestDate)) {
-                latestDate = msgDate;
-            }
-        }
-        if (latestDate == null) latestDate = Instant.now();
-
-        String subject = firstMsg.getSubject() != null ? firstMsg.getSubject() : "";
-        String finalBody = fullConversation.toString();
-
-        String textToEmbed = "Subject: " + subject + ". " + subject + ".\nContent:" +
-                (finalBody.length() > 6000 ? finalBody.substring(0, 6000) : finalBody);
-
-        com.pgvector.PGvector embedding = null;
-        try {
-            embedding = embeddingService.getEmbedding(textToEmbed).block();
-        } catch (Exception e) {
-            log.error("Failed to generate embedding for thread {}", threadId, e);
-        }
-
-        Email email = emailRepository.findByUserAndThreadId(user, threadId)
-                .orElse(Email.builder()
-                        .user(user)
-                        .threadId(threadId)
-                        .build());
-
-        email.setFrom(firstMsg.getFrom());
-        email.setTo(firstMsg.getTo());
-        email.setSubject(subject);
-        email.setSnippet(threadDetail.getSnippet());
-        email.setBody(finalBody);
-
-        email.setStatus(EmailStatus.INBOX);
-        email.setLabelIds(labelIdsString);
-        email.setIsRead(isRead);
-        email.setIsStarred(isStarred);
-        email.setHasAttachments(hasAttachments);
-        email.setReceivedAt(latestDate);
-        if (embedding != null) {
-            email.setEmbedding(embedding);
-        }
-
-        return emailRepository.save(email);
-    }
 
     private Instant parseGmailDate(String dateStr) {
         if (dateStr == null || dateStr.isBlank()) return Instant.now();

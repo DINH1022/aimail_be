@@ -3,9 +3,7 @@ package com.example.aimailbox.service;
 import com.example.aimailbox.model.Email;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.EmailRepository;
-import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -49,7 +47,6 @@ public class SematicSearchService {
                         () -> log.info("Sync COMPLETED successfully for user {}", user.getEmail())
                 );
     }
-
     private Flux<Void> fetchPageRecursive(User user, String query, int maxResults, String pageToken) {
         return proxyMailService.getListThreads(maxResults, pageToken, query, null, false)
                 .flatMapMany(response -> {
@@ -59,21 +56,24 @@ public class SematicSearchService {
                     Flux<Void> currentBatchProcessing = Flux.fromIterable(response.getThreads())
                             .flatMap(shortThread ->
                                             proxyMailService.getThreadDetail(shortThread.getId())
-                                                    .doOnNext(detail -> {
-                                                        try {
-                                                            emailService.saveEmailToDatabase(user, detail);
-                                                        } catch (Exception e) {
-                                                            log.error("Failed to save thread {}: {}", detail.getId(), e.getMessage());
-                                                        }
-                                                    })
+                                                    .flatMap(detail ->
+
+                                                            Mono.fromRunnable(() -> {
+                                                                        try {
+                                                                            emailService.saveThreadToDatabase(user, detail);
+                                                                        } catch (Exception e) {
+                                                                            log.error("Failed to save thread {}: {}", detail.getId(), e.getMessage());
+                                                                        }
+                                                                    })
+                                                                    .subscribeOn(Schedulers.boundedElastic())
+                                                                    .then()
+                                                    )
                                                     .onErrorResume(e -> {
                                                         log.warn("Error fetching thread details {}: {}", shortThread.getId(), e.getMessage());
                                                         return Mono.empty();
                                                     }),
-                                    5
-                            )
-                            .then()
-                            .flux();
+                                    5 // Concurrency Limit
+                            );
 
                     String nextPage = response.getNextPageToken();
                     if (nextPage != null && !nextPage.isBlank()) {
