@@ -2,6 +2,7 @@ package com.example.aimailbox.service;
 
 import com.example.aimailbox.dto.response.MessageDetailResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
+import com.example.aimailbox.helper.UserHelper;
 import com.example.aimailbox.model.User;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -28,16 +29,23 @@ import java.util.concurrent.TimeUnit;
 @FieldDefaults(level = AccessLevel.PRIVATE,makeFinal = true)
 @RequiredArgsConstructor
 @Slf4j
-public class EmailCacheService {
+public class FuzzySearchService {
     ProxyMailService proxyMailService;
-    EmailService emailService; 
-    
+    UserHelper userHelper;
     Cache<String, List<ThreadDetailResponse>> userCache = Caffeine.newBuilder()
             .expireAfterAccess(30, TimeUnit.MINUTES)
             .maximumSize(20)
             .recordStats()
             .build();
-    public Mono<Void> syncRecentMails(User user) {
+    public Mono<Void> refreshData() {
+        return userHelper.getCurrentUser()
+                .flatMap(this::syncRecentMails);
+    }
+    public Mono<List<ThreadDetailResponse>> searchFuzzyEmails(String query) {
+        return userHelper.getCurrentUser()
+                .map(user -> searchInCache(query,user.getEmail()));
+    }
+    private Mono<Void> syncRecentMails(User user) {
         Authentication auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
         return proxyMailService.getListThreads(100, null, null, null, false)
                 .flatMapMany(response -> {
@@ -63,7 +71,7 @@ public class EmailCacheService {
                 .then()
                 .contextWrite(Context.of(Authentication.class, auth));
     }
-    public List<ThreadDetailResponse> searchInCache(String query,String userEmail) {
+    private List<ThreadDetailResponse> searchInCache(String query,String userEmail) {
         List<ThreadDetailResponse> currentData = userCache.getIfPresent(userEmail);
         if(query == null || query.isBlank()){
             return List.of();
@@ -94,7 +102,6 @@ public class EmailCacheService {
                 .map(ThreadScoreWrapper::getThread)
                 .toList();
     }
-
     @Data
     @AllArgsConstructor
     private static class ThreadScoreWrapper {

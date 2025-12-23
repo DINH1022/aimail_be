@@ -1,5 +1,6 @@
 package com.example.aimailbox.model;
 
+import com.pgvector.PGvector;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
