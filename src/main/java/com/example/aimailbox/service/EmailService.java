@@ -3,6 +3,7 @@ package com.example.aimailbox.service;
 import com.example.aimailbox.dto.request.SnoozeEmailRequest;
 import com.example.aimailbox.dto.request.UpdateEmailStatusRequest;
 import com.example.aimailbox.dto.response.EmailResponse;
+import com.example.aimailbox.dto.response.MessageDetailResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse; // Add missing import
 import com.example.aimailbox.model.Email;
 import com.example.aimailbox.model.EmailStatus;
@@ -465,51 +466,95 @@ public class EmailService {
                 .build();
     }
 
+
     @Transactional
-    public void saveThreadToDatabase(User user, ThreadDetailResponse threadDetail) {
+    public Email saveEmailToDatabase(User user, ThreadDetailResponse threadDetail) {
         if (threadDetail == null || threadDetail.getMessages() == null || threadDetail.getMessages().isEmpty()) {
-            return;
+            return null;
+        }
+        String threadId = threadDetail.getId();
+        var firstMsg = threadDetail.getMessages().get(0);
+        var labelIds = threadDetail.getLabelIds();
+        boolean isRead = labelIds == null || !labelIds.contains("UNREAD");
+        boolean isStarred = labelIds != null && labelIds.contains("STARRED");
+
+        String labelIdsString = null;
+        if (labelIds != null && !labelIds.isEmpty()) {
+            labelIdsString = String.join(",", labelIds);
+        }
+        boolean hasAttachments = false;
+        for (var msg : threadDetail.getMessages()) {
+            if (msg.getAttachments() != null && !msg.getAttachments().isEmpty()) {
+                hasAttachments = true;
+                break;
+            }
         }
 
-        var firstMsg = threadDetail.getMessages().get(0);
+        // --- PHẦN MỚI: LOOP QUA TIN NHẮN ĐỂ GỘP NỘI DUNG & TÌM NGÀY MỚI NHẤT ---
+        StringBuilder fullConversation = new StringBuilder();
+        Instant latestDate = null; // Dùng để tìm ngày mới nhất trong thread
 
-        // 1. Chuẩn bị nội dung Text (Ưu tiên text/plain, nếu không có thì lấy html strip tag)
-        String rawBody = firstMsg.getTextBody() != null ? firstMsg.getTextBody() : firstMsg.getHtmlBody();
-        String cleanBody = rawBody != null ? rawBody.replaceAll("\\<.*?\\>", "").trim() : "";
+        for (var msg : threadDetail.getMessages()) {
+            String sender = msg.getFrom() != null ? msg.getFrom() : "Unknown";
+            String rawBody = msg.getTextBody() != null ? msg.getTextBody() : msg.getHtmlBody();
+            String cleanBody = rawBody != null ? rawBody.replaceAll("\\<.*?\\>", "").trim() : "";
+
+            if (!cleanBody.isEmpty()) {
+                fullConversation.append("\n[From: ").append(sender).append("]: ").append(cleanBody);
+            }
+            Instant msgDate = parseGmailDate(msg.getDate());
+            if (latestDate == null || msgDate.isAfter(latestDate)) {
+                latestDate = msgDate;
+            }
+        }
+        if (latestDate == null) latestDate = Instant.now();
+
         String subject = firstMsg.getSubject() != null ? firstMsg.getSubject() : "";
+        String finalBody = fullConversation.toString();
 
-        // 2. Tạo nội dung để Embedding
-        // Mẹo: Lặp lại Subject 2-3 lần để tăng trọng số khi tìm kiếm
-        String contentToEmbed = "Subject: " + subject + ". " + subject + ". Body: " +
-                (cleanBody.length() > 2000 ? cleanBody.substring(0, 2000) : cleanBody);
+        String textToEmbed = "Subject: " + subject + ". " + subject + ".\nContent:" +
+                (finalBody.length() > 6000 ? finalBody.substring(0, 6000) : finalBody);
 
-        // 3. Gọi AI tạo Vector (Block ở đây vì đang trong luồng xử lý đồng bộ của doOnNext)
-        PGvector embedding = embeddingService.getEmbedding(contentToEmbed).block();
+        com.pgvector.PGvector embedding = null;
+        try {
+            embedding = embeddingService.getEmbedding(textToEmbed).block();
+        } catch (Exception e) {
+            log.error("Failed to generate embedding for thread {}", threadId, e);
+        }
 
-        // 4. Lưu vào DB
-        Email email = emailRepository.findByUserAndThreadId(user, threadDetail.getId())
+        Email email = emailRepository.findByUserAndThreadId(user, threadId)
                 .orElse(Email.builder()
                         .user(user)
-                        .threadId(threadDetail.getId())
+                        .threadId(threadId)
                         .build());
 
+        email.setFrom(firstMsg.getFrom());
+        email.setTo(firstMsg.getTo());
         email.setSubject(subject);
         email.setSnippet(threadDetail.getSnippet());
-        email.setBody(cleanBody); // Lưu body đã làm sạch hoặc raw tùy bạn
-        email.setEmbedding(embedding); // <--- LƯU VECTOR VÀO ĐÂY
+        email.setBody(finalBody);
 
-        // Parse ngày tháng (đơn giản hóa)
-        try {
-            if (firstMsg.getDate() != null) {
-                // Bạn cần một hàm parse date chuẩn RFC_1123 ở đây, ví dụ: Instant.parse(...)
-                // email.setReceivedAt(...);
-                email.setReceivedAt(Instant.now()); // Tạm thời để now nếu chưa có parser
-            }
-        } catch (Exception e) {
-            email.setReceivedAt(Instant.now());
+        email.setStatus(EmailStatus.INBOX);
+        email.setLabelIds(labelIdsString);
+        email.setIsRead(isRead);
+        email.setIsStarred(isStarred);
+        email.setHasAttachments(hasAttachments);
+        email.setReceivedAt(latestDate);
+        if (embedding != null) {
+            email.setEmbedding(embedding);
         }
 
-        emailRepository.save(email);
-        log.debug("Saved and embedded thread: {}", threadDetail.getId());
+        return emailRepository.save(email);
     }
+
+    private Instant parseGmailDate(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) return Instant.now();
+        try {
+            return java.time.ZonedDateTime.parse(dateStr, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+        } catch (Exception e) {
+            return Instant.now();
+        }
+    }
+
+
 }
