@@ -3,7 +3,6 @@ package com.example.aimailbox.repository;
 import com.example.aimailbox.model.Email;
 import com.example.aimailbox.model.EmailStatus;
 import com.example.aimailbox.model.User;
-import com.pgvector.PGvector;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -56,7 +55,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
     List<Email> findByUserAndStatusAndIsReadAndHasAttachments(User user, EmailStatus status, Boolean isRead, Boolean hasAttachments, Sort sort);
 
-    Email findFirstByUserOrderByReceivedAtDesc(User user);
+    Optional<Email> findFirstByUserOrderByReceivedAtDesc(User user);
 
     @Query(value = """
             SELECT * FROM emails e
@@ -64,5 +63,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
             ORDER BY e.embedding <-> :queryVector
             LIMIT 20
             """, nativeQuery = true)
-    List<Email> searchBySemantic(@Param("userId") Long userId, @Param("queryVector") PGvector queryVector);
+    List<Email> searchBySemantic(@Param("userId") Long userId,
+                                 @Param("queryVector") float[] queryVector);
 }

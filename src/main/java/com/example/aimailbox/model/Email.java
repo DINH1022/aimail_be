@@ -1,6 +1,6 @@
 package com.example.aimailbox.model;
 
-import com.pgvector.PGvector;
+
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.List;
 
 @Entity
 @Table(name = "emails", indexes = {
@@ -80,7 +81,7 @@ public class Email {
 
     @Column(columnDefinition = "vector(768)")
     @JdbcTypeCode(SqlTypes.VECTOR)
-    private PGvector embedding;
+    private float[] embedding;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -7,6 +7,7 @@ import com.example.aimailbox.dto.response.GmailSendResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
 import com.example.aimailbox.service.FuzzySearchService;
 import com.example.aimailbox.service.ProxyMailService;
+import com.example.aimailbox.service.SematicSearchService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -26,6 +27,7 @@ public class MailController {
     ProxyMailService proxyMailService;
     FuzzySearchService fuzzySearchService;
     private static final Logger log = LoggerFactory.getLogger(MailController.class);
+    private final SematicSearchService sematicSearchService;
 
     @GetMapping("/{id}")
     public Mono<ThreadDetailResponse> getEmailDetail(@PathVariable String id) {
@@ -125,8 +127,16 @@ public class MailController {
     public Mono<List<ThreadDetailResponse>> searchEmails(@RequestParam String query) {
         return fuzzySearchService.searchFuzzyEmails(query);
     }
+    @GetMapping("/search-sematic")
+    public Mono<List<ThreadDetailResponse>> searchSematic(@RequestParam String query) {
+        return fuzzySearchService.searchFuzzyEmails(query);
+    }
     @PostMapping("/sync")
     public Mono<Void> syncEmails() {
         return fuzzySearchService.refreshData();
+    }
+    @PostMapping("/sematic-sync")
+    public Mono<Void> syncSematicEmail() {
+        return sematicSearchService.syncEmails();
     }
 }

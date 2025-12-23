@@ -1,5 +1,6 @@
 package com.example.aimailbox.service;
 
+import com.example.aimailbox.helper.UserHelper;
 import com.example.aimailbox.model.Email;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.EmailRepository;
@@ -23,41 +24,56 @@ public class SematicSearchService {
     private final EmailRepository emailRepository;
     private final ProxyMailService proxyMailService;
     private final EmailService emailService;
+    private final UserHelper userHelper;
 
-    public void syncEmailFromGmailToDB(User user)
-    {
+    public Mono<Void> syncEmails() {
+        return userHelper.getCurrentUser()
+                .doOnNext(this::syncEmailFromGmailToDB)
+                .then();
+    }
+
+
+    private void syncEmailFromGmailToDB(User user) {
         String query;
-        int initialMaxResults;
-        Email lastEmailReceived = emailRepository.findFirstByUserOrderByReceivedAtDesc(user);
-        Instant lastReceived = lastEmailReceived.getReceivedAt();
+        int batchSize;
+        boolean fetchAll;
+        Instant lastReceived = emailRepository
+                .findFirstByUserOrderByReceivedAtDesc(user)
+                .map(Email::getReceivedAt)
+                .orElse(null);
+
         if (lastReceived == null) {
             query = "";
-            initialMaxResults = 100;
+            batchSize = 2;
+            fetchAll = false;
         } else {
             query = "after:" + lastReceived.getEpochSecond();
-            initialMaxResults = 50;
+            batchSize = 50;
+            fetchAll = true;
         }
+
         Authentication auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
-        fetchPageRecursive(user, query, initialMaxResults, null)
+        fetchPageRecursive(user, query, batchSize, null, fetchAll)
                 .contextWrite(Context.of(Authentication.class, auth))
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
                         null,
                         error -> log.error("Sync FAILED for user {}: ", user.getEmail(), error),
-                        () -> log.info("Sync COMPLETED successfully for user {}", user.getEmail())
+                        () -> log.info("Sync COMPLETED for user {}. Mode: {}", user.getEmail(), fetchAll ? "FULL SYNC" : "INITIAL BATCH")
                 );
     }
-    private Flux<Void> fetchPageRecursive(User user, String query, int maxResults, String pageToken) {
+
+    private Flux<Void> fetchPageRecursive(User user, String query, int maxResults, String pageToken, boolean fetchAll) {
         return proxyMailService.getListThreads(maxResults, pageToken, query, null, false)
                 .flatMapMany(response -> {
                     if (response == null || response.getThreads() == null || response.getThreads().isEmpty()) {
                         return Flux.empty();
                     }
+
                     Flux<Void> currentBatchProcessing = Flux.fromIterable(response.getThreads())
                             .flatMap(shortThread ->
                                             proxyMailService.getThreadDetail(shortThread.getId())
                                                     .flatMap(detail ->
-
                                                             Mono.fromRunnable(() -> {
                                                                         try {
                                                                             emailService.saveThreadToDatabase(user, detail);
@@ -76,9 +92,9 @@ public class SematicSearchService {
                             );
 
                     String nextPage = response.getNextPageToken();
-                    if (nextPage != null && !nextPage.isBlank()) {
+                    if (nextPage != null && !nextPage.isBlank() && fetchAll) {
                         return currentBatchProcessing.concatWith(
-                                fetchPageRecursive(user, query, maxResults, nextPage)
+                                fetchPageRecursive(user, query, maxResults, nextPage, true) // Tiếp tục đệ quy
                         );
                     } else {
                         return currentBatchProcessing;

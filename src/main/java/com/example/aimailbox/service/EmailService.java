@@ -10,7 +10,6 @@ import com.example.aimailbox.model.EmailStatus;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.EmailRepository;
 import com.example.aimailbox.repository.UserRepository;
-import com.pgvector.PGvector;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -310,11 +309,11 @@ public class EmailService {
         String fullConversation = conversationBuilder.toString();
         String textToEmbed = "Subject: " + subject + "\nConversation:" +
                 (fullConversation.length() > 6000 ? fullConversation.substring(0, 6000) : fullConversation);
-        PGvector embedding = null;
+        float[] embedding = null;
         try {
             embedding = embeddingService.getEmbedding(textToEmbed).block();
         } catch (Exception e) {
-            log.error("Failed to generate embedding for thread {}", threadId, e);
+            log.error("Failed to generate embedding", e);
         }
          // Parse date
          Instant receivedAt = Instant.now();
@@ -342,7 +341,7 @@ public class EmailService {
          email.setIsStarred(isStarred);
          email.setHasAttachments(hasAttachments);
          email.setReceivedAt(receivedAt);
-        if (embedding != null) {
+        if (embedding != null && embedding.length > 0) {
             email.setEmbedding(embedding);
         }
          return emailRepository.save(email);
