@@ -54,4 +54,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     List<Email> findByUserAndStatusAndHasAttachments(User user, EmailStatus status, Boolean hasAttachments, Sort sort);
 
     List<Email> findByUserAndStatusAndIsReadAndHasAttachments(User user, EmailStatus status, Boolean isRead, Boolean hasAttachments, Sort sort);
+
+    Email findFirstByUserOrderByReceivedAtDesc(User user);
 }
