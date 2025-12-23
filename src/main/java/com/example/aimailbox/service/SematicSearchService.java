@@ -19,7 +19,6 @@ import java.time.Instant;
 import java.util.List;
 
 @Service
-@FieldDefaults(level = AccessLevel.PRIVATE)
 @RequiredArgsConstructor
 @Slf4j
 public class SematicSearchService {

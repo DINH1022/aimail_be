@@ -19,7 +19,7 @@ google:
   client-id: 301820514600-0rql8nnidjflqicvojj1im9c7tkdmuus.apps.googleusercontent.com
   client-secret: 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
   redirect-uri: http://localhost:8080/auth/google/callback
-  generative-api-key: AIzaSyBNtT0oTH7ZZxOxhdgpveA8nvPLtT0cr4o
+  generative-api-key: AIzaSyA3FU2l_V-kEy6z7e9c4SUgwOF1fpRwbkc
 
 # Frontend callback URL used by backend to redirect user after Google auth
 frontend:

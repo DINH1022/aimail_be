@@ -9,6 +9,7 @@ import com.example.aimailbox.model.EmailStatus;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.EmailRepository;
 import com.example.aimailbox.repository.UserRepository;
+import com.pgvector.PGvector;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -30,6 +31,7 @@ public class EmailService {
     private final EmailRepository emailRepository;
     private final UserRepository userRepository;
     private final ProxyMailService proxyMailService;
+    private final EmbeddingService embeddingService;
 
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -461,5 +463,53 @@ public class EmailService {
                 .createdAt(email.getCreatedAt())
                 .updatedAt(email.getUpdatedAt())
                 .build();
+    }
+
+    @Transactional
+    public void saveThreadToDatabase(User user, ThreadDetailResponse threadDetail) {
+        if (threadDetail == null || threadDetail.getMessages() == null || threadDetail.getMessages().isEmpty()) {
+            return;
+        }
+
+        var firstMsg = threadDetail.getMessages().get(0);
+
+        // 1. Chuẩn bị nội dung Text (Ưu tiên text/plain, nếu không có thì lấy html strip tag)
+        String rawBody = firstMsg.getTextBody() != null ? firstMsg.getTextBody() : firstMsg.getHtmlBody();
+        String cleanBody = rawBody != null ? rawBody.replaceAll("\\<.*?\\>", "").trim() : "";
+        String subject = firstMsg.getSubject() != null ? firstMsg.getSubject() : "";
+
+        // 2. Tạo nội dung để Embedding
+        // Mẹo: Lặp lại Subject 2-3 lần để tăng trọng số khi tìm kiếm
+        String contentToEmbed = "Subject: " + subject + ". " + subject + ". Body: " +
+                (cleanBody.length() > 2000 ? cleanBody.substring(0, 2000) : cleanBody);
+
+        // 3. Gọi AI tạo Vector (Block ở đây vì đang trong luồng xử lý đồng bộ của doOnNext)
+        PGvector embedding = embeddingService.getEmbedding(contentToEmbed).block();
+
+        // 4. Lưu vào DB
+        Email email = emailRepository.findByUserAndThreadId(user, threadDetail.getId())
+                .orElse(Email.builder()
+                        .user(user)
+                        .threadId(threadDetail.getId())
+                        .build());
+
+        email.setSubject(subject);
+        email.setSnippet(threadDetail.getSnippet());
+        email.setBody(cleanBody); // Lưu body đã làm sạch hoặc raw tùy bạn
+        email.setEmbedding(embedding); // <--- LƯU VECTOR VÀO ĐÂY
+
+        // Parse ngày tháng (đơn giản hóa)
+        try {
+            if (firstMsg.getDate() != null) {
+                // Bạn cần một hàm parse date chuẩn RFC_1123 ở đây, ví dụ: Instant.parse(...)
+                // email.setReceivedAt(...);
+                email.setReceivedAt(Instant.now()); // Tạm thời để now nếu chưa có parser
+            }
+        } catch (Exception e) {
+            email.setReceivedAt(Instant.now());
+        }
+
+        emailRepository.save(email);
+        log.debug("Saved and embedded thread: {}", threadDetail.getId());
     }
 }
