@@ -47,7 +47,7 @@ public class SematicSearchService {
                 log.warn("Embedding service returned empty vector");
                 return Collections.emptyList();
             }
-            List<Email> emails = emailRepository.searchBySemantic(user.getId(), queryVector);
+            List<Email> emails = emailRepository.searchBySemantic(user.getId(), queryVector,1.2);
             return emails.stream()
                     .map(this::mapToResponse)
                     .collect(Collectors.toList());
@@ -67,7 +67,7 @@ public class SematicSearchService {
 
         if (lastReceived == null) {
             query = "";
-            batchSize = 2;
+            batchSize = 100;
             fetchAll = false;
         } else {
             query = "after:" + lastReceived.getEpochSecond();

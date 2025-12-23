@@ -58,11 +58,13 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     Optional<Email> findFirstByUserOrderByReceivedAtDesc(User user);
 
     @Query(value = """
-            SELECT * FROM emails e
-            WHERE e.user_id = :userId
-            ORDER BY e.embedding <-> :queryVector
-            LIMIT 20
-            """, nativeQuery = true)
+        SELECT * FROM emails e
+        WHERE e.user_id = :userId
+        AND (e.embedding <-> CAST(:queryVector AS VECTOR)) < :threshold  -- Thêm dòng này
+        ORDER BY e.embedding <-> CAST(:queryVector AS VECTOR)
+        LIMIT 20
+        """, nativeQuery = true)
     List<Email> searchBySemantic(@Param("userId") Long userId,
-                                 @Param("queryVector") float[] queryVector);
+                                 @Param("queryVector") float[] queryVector,
+                                 @Param("threshold") double threshold);
 }

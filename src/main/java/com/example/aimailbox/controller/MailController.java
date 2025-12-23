@@ -2,6 +2,7 @@ package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.request.EmailSendRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
+import com.example.aimailbox.dto.response.EmailResponse;
 import com.example.aimailbox.dto.response.EmailSummaryResponse;
 import com.example.aimailbox.dto.response.GmailSendResponse;
 import com.example.aimailbox.dto.response.ThreadDetailResponse;
@@ -128,8 +129,8 @@ public class MailController {
         return fuzzySearchService.searchFuzzyEmails(query);
     }
     @GetMapping("/search-sematic")
-    public Mono<List<ThreadDetailResponse>> searchSematic(@RequestParam String query) {
-        return fuzzySearchService.searchFuzzyEmails(query);
+    public List<EmailResponse> searchSematic(@RequestParam String query) {
+        return sematicSearchService.searchSematic(query);
     }
     @PostMapping("/sync")
     public Mono<Void> syncEmails() {

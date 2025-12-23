@@ -299,7 +299,7 @@ public class EmailService {
                  hasAttachments = true;
              }
              String sender = msg.getFrom() != null ? msg.getFrom() : "Unknown";
-             String rawBody = msg.getTextBody() != null ? msg.getTextBody() : msg.getHtmlBody();
+             String rawBody = msg.getTextBody() != null ? msg.getTextBody() : "" ;
              String cleanBody = rawBody != null ? rawBody.replaceAll("\\<.*?\\>", "").trim() : "";
              if (!cleanBody.isEmpty()) {
                  conversationBuilder.append("\n[From: ").append(sender).append("]: ").append(cleanBody);
@@ -307,8 +307,8 @@ public class EmailService {
 
          }
         String fullConversation = conversationBuilder.toString();
-        String textToEmbed = "Subject: " + subject + "\nConversation:" +
-                (fullConversation.length() > 6000 ? fullConversation.substring(0, 6000) : fullConversation);
+        String textToEmbed = "Subject: " + subject + ". " + subject + ". " + subject + ".\n" +
+                "Content: " + (fullConversation.length() > 5000 ? fullConversation.substring(0, 5000) : fullConversation);
         float[] embedding = null;
         try {
             embedding = embeddingService.getEmbedding(textToEmbed).block();
