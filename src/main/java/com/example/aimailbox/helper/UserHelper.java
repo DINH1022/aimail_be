@@ -55,4 +55,20 @@ public class UserHelper {
                 "Unsupported principal type: " + principal.getClass()
         );
     }
+
+    public User getUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new RuntimeException("User not authenticated");
+        }
+        Object principal = authentication.getPrincipal();
+
+        if (principal instanceof User) {
+            return (User) principal;
+        } else {
+            String email = authentication.getName();
+            return userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+        }
+    }
 }
