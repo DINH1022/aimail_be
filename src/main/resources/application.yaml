@@ -1,6 +1,14 @@
 spring:
   application:
     name: AImailbox
+  datasource:
+    url: jdbc:postgresql://ep-fragrant-frog-a1hl4rhq-pooler.ap-southeast-1.aws.neon.tech/neondb
+    username: neondb_owner
+    password: npg_cAuqvd5mMs1E
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
 
 jwt:
   secret: nkjhuv3787v09nhfuehcn93784nvcjsd
@@ -22,12 +30,4 @@ cors:
   # include deployed Vercel frontend plus local dev origins
   allowed-origins: https://aimail-7fc0kb7bb-vinhs-projects-373b8979.vercel.app,http://localhost:5173,http://localhost:5174,http://localhost:3000,https://aimail-fsze5u387-vinhs-projects-373b8979.vercel.app/,https://aimail-rdcdzbplk-vinhs-projects-373b8979.vercel.app/
 
-datasource:
-  url: jdbc:h2:mem:testdb
-  driverClassName: org.h2.Driver
-  username: sa
-  password:
-jpa:
-  hibernate:
-    ddl-auto: update
-  show-sql: false
+
