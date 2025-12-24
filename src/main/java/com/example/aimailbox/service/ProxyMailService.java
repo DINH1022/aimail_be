@@ -2,6 +2,7 @@ package com.example.aimailbox.service;
 
 import com.example.aimailbox.dto.request.EmailSendRequest;
 import com.example.aimailbox.dto.request.LabelCreationRequest;
+import com.example.aimailbox.dto.request.LabelUpdateRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
@@ -75,6 +76,14 @@ public class ProxyMailService {
                  .retrieve()
                  .bodyToMono(LabelDetailResponse.class)
                 .onErrorMap(e -> new RuntimeException("Failed to create label", e));
+    }
+    public Mono<LabelDetailResponse> updateLabel(LabelUpdateRequest request, String id) {
+        return gmailWebClient.patch()
+                .uri("/labels/{id}", id)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(LabelDetailResponse.class)
+                .onErrorMap(e -> new RuntimeException("Failed to update label", e));
     }
 
     public Mono<Void> deleteLabel(String id) {

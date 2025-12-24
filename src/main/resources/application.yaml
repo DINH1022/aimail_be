@@ -2,9 +2,9 @@ spring:
   application:
     name: AImailbox
   datasource:
-    url: jdbc:postgresql://ep-fragrant-frog-a1hl4rhq-pooler.ap-southeast-1.aws.neon.tech/neondb
+    url: jdbc:postgresql://ep-green-base-a1cp4x6y-pooler.ap-southeast-1.aws.neon.tech/neondb
     username: neondb_owner
-    password: npg_cAuqvd5mMs1E
+    password: npg_xu8JCSfkFBm5
   jpa:
     hibernate:
       ddl-auto: update
@@ -19,7 +19,7 @@ google:
   client-id: 301820514600-0rql8nnidjflqicvojj1im9c7tkdmuus.apps.googleusercontent.com
   client-secret: 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
   redirect-uri: http://localhost:8080/auth/google/callback
-  generative-api-key: AIzaSyA3FU2l_V-kEy6z7e9c4SUgwOF1fpRwbkc
+  generative-api-key: AIzaSyBelD56Kzs6B5l2LbFSJs9d_6LuXHk_pds
 
 # Frontend callback URL used by backend to redirect user after Google auth
 frontend:

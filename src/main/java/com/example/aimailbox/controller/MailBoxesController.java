@@ -1,6 +1,7 @@
 package com.example.aimailbox.controller;
 
 import com.example.aimailbox.dto.request.LabelCreationRequest;
+import com.example.aimailbox.dto.request.LabelUpdateRequest;
 import com.example.aimailbox.dto.response.LabelDetailResponse;
 import com.example.aimailbox.dto.response.LabelResponse;
 import com.example.aimailbox.dto.response.ListThreadResponse;
@@ -42,6 +43,10 @@ public class MailBoxesController {
     @PostMapping
     public Mono<LabelDetailResponse> createLabel(@Valid @RequestBody LabelCreationRequest request) {
         return proxyMailService.createLabel(request);
+    }
+    @PatchMapping
+    public Mono<LabelDetailResponse> updateLabel(@RequestParam String id, @Valid @RequestBody LabelUpdateRequest request) {
+        return proxyMailService.updateLabel(request, id);
     }
     @DeleteMapping("/{id}")
     public Mono<Void> deleteLabel(@PathVariable String id) {
