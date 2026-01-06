@@ -18,7 +18,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Sort;
+import com.example.aimailbox.dto.request.ModifyEmailRequest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
+import java.util.Collections;
 import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -226,6 +229,15 @@ public class EmailService {
         email = emailRepository.save(email);
         log.info("Snoozed email {} until {}", id, request.getSnoozeUntil());
         
+        try {
+            proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
+                    .threadId(email.getThreadId())
+                    .removeLabelIds(Collections.singletonList("INBOX"))
+                    .build()).block();
+        } catch (Exception e) {
+            log.warn("Failed to sync snooze label with Gmail", e);
+        }
+
         return convertToResponse(email);
     }
 
@@ -252,6 +264,15 @@ public class EmailService {
         email = emailRepository.save(email);
         log.info("Snoozed email (threadId={}) until {}", threadId, request.getSnoozeUntil());
         
+        try {
+            proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
+                    .threadId(email.getThreadId())
+                    .removeLabelIds(Collections.singletonList("INBOX"))
+                    .build()).block();
+        } catch (Exception e) {
+             log.warn("Failed to sync snooze label with Gmail", e);
+        }
+
         return convertToResponse(email);
     }
 
@@ -371,6 +392,17 @@ public class EmailService {
         email = emailRepository.save(email);
         log.info("Unsnoozed email {} back to {}", id, restoreStatus);
         
+        if (restoreStatus == EmailStatus.INBOX) {
+            try {
+                proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
+                        .threadId(email.getThreadId())
+                         .addLabelIds(Collections.singletonList("INBOX"))
+                        .build()).block();
+            } catch (Exception e) {
+                 log.warn("Failed to sync unsnooze label with Gmail", e);
+            }
+        }
+
         return convertToResponse(email);
     }
 
@@ -398,6 +430,23 @@ public class EmailService {
                 
                 emailRepository.save(email);
                 log.info("Auto-restored email {} from snooze to {}", email.getId(), restoreStatus);
+                
+                 if (restoreStatus == EmailStatus.INBOX) {
+                    try {
+                         UsernamePasswordAuthenticationToken authentication = 
+                                 new UsernamePasswordAuthenticationToken(email.getUser(), null, Collections.emptyList());
+                         SecurityContextHolder.getContext().setAuthentication(authentication);
+
+                        proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
+                                .threadId(email.getThreadId())
+                                .addLabelIds(Collections.singletonList("INBOX"))
+                                .build()).block();
+                    } catch (Exception e) {
+                        log.warn("Failed to sync auto-restore label with Gmail for email {}", email.getId(), e);
+                    } finally {
+                        SecurityContextHolder.clearContext();
+                    }
+                }
             }
         }
     }
