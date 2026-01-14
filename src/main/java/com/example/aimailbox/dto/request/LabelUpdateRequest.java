@@ -12,4 +12,5 @@ import lombok.experimental.FieldDefaults;
 public class LabelUpdateRequest {
     @NotBlank(message = "Label name must not be blank")
     String name;
+    Long kanbanColumnId;
 }

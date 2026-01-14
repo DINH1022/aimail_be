@@ -6,7 +6,10 @@ import com.example.aimailbox.dto.request.LabelUpdateRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
+import com.example.aimailbox.helper.UserHelper;
+import com.example.aimailbox.model.KanbanColumn;
 import com.example.aimailbox.model.User;
+import com.example.aimailbox.repository.KanbanColumnRepository;
 import com.example.aimailbox.wrapper.LabelWrapper;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
@@ -35,7 +38,6 @@ import java.util.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.beans.factory.annotation.Value;
 
 @Service
@@ -46,7 +48,8 @@ public class ProxyMailService {
     final WebClient gmailWebClient;
     final OAuthTokenService oAuthTokenService;
     final WebClient googleGenerativeClient;
-
+    final KanbanColumnRepository kanbanColumnRepository;
+    final UserHelper userHelper;
     @Value("${google.generative-api-key:}")
     String googleGenerativeApiKey;
 
@@ -70,6 +73,11 @@ public class ProxyMailService {
     }
 
     public Mono<LabelDetailResponse> createLabel(LabelCreationRequest request) {
+        User user = userHelper.getUser();
+        saveKanbanColumn(request.getName(), user.getId());
+        if(request.isSystemLabel()){
+            return Mono.empty();
+        }
         return gmailWebClient.post()
                 .uri("/labels")
                  .bodyValue(request)
@@ -78,6 +86,9 @@ public class ProxyMailService {
                 .onErrorMap(e -> new RuntimeException("Failed to create label", e));
     }
     public Mono<LabelDetailResponse> updateLabel(LabelUpdateRequest request, String id) {
+
+        updateKanbanColumn(request.getName(), request.getKanbanColumnId());
+
         return gmailWebClient.patch()
                 .uri("/labels/{id}", id)
                 .bodyValue(request)
@@ -237,7 +248,9 @@ public class ProxyMailService {
                  .retrieve()
                  .bodyToMono(String.class)
                 .map(response -> "Labels modified successfully")
-                .onErrorMap(e -> new RuntimeException("Failed to modify message labels", e));
+                .onErrorMap(e ->
+                        new RuntimeException("Failed to modify message labels")
+                );
     }
 
     public Mono<Void> deleteMessage(String messageId) {
@@ -633,4 +646,39 @@ public class ProxyMailService {
                 .onErrorReturn(new EmailSummaryResponse("Failed to load message"));
     }
 
+    public List<KanbanColumnResponse> getKanbanColumnsByUserId() {
+        User user = userHelper.getUser();
+        return kanbanColumnRepository.findByUserIdOrderByCreatedAtAsc(user.getId())
+                .stream()
+                .map(kanbanColumn -> KanbanColumnResponse.builder()
+                        .id(kanbanColumn.getId())
+                        .name(kanbanColumn.getColumnName())
+                        .build())
+                .toList();
+    }
+
+    private void updateKanbanColumn(String name,Long id)
+    {
+        KanbanColumn kanbanColumn = kanbanColumnRepository.findById(id).orElse(null);
+        if(kanbanColumn==null)
+        {
+            return;
+        }
+        kanbanColumn.setColumnName(name);
+        kanbanColumnRepository.save(kanbanColumn);
+    }
+    public void deleteKanbanColumn(Long id)
+    {
+        kanbanColumnRepository.deleteById(id);
+    }
+    private void saveKanbanColumn(String name, Long userId) {
+        KanbanColumn kanbanColumn = KanbanColumn.builder()
+                .userId(userId)
+                .columnName(name)
+                .build();
+        KanbanColumn savedColumn = kanbanColumnRepository.save(kanbanColumn);
+        KanbanColumnResponse.builder()
+                .name(savedColumn.getColumnName())
+                .build();
+    }
 }
