@@ -6,10 +6,10 @@ services:
     region: oregon
     branch: main
     dockerfilePath: Dockerfile
-#    buildCommand: mvn -B -DskipTests package
-#    startCommand: java -jar /app/app.jar --server.port=${PORT:-8080}
+    buildCommand: mvn -B -DskipTests package
+    startCommand: java -jar /app/app.jar --server.port=${PORT:-8080}
     healthCheckPath: /auth/status
-#    healthCheckIntervalSeconds: 10
+    healthCheckIntervalSeconds: 10
     envVars:
       - key: GOOGLE_CLIENT_ID
       - key: GOOGLE_CLIENT_SECRET
@@ -20,5 +20,5 @@ services:
       - key: SPRING_DATASOURCE_PASSWORD
       - key: CORS_ALLOWED_ORIGINS
       - key: JWT_REFRESH_EXPIRATION_DAYS
-    autoDeploy: false
+    autoDeploy: true
 
