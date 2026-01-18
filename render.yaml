@@ -9,7 +9,7 @@ services:
 #    buildCommand: mvn -B -DskipTests package
 #    startCommand: java -jar /app/app.jar --server.port=${PORT:-8080}
     healthCheckPath: /auth/status
-    healthCheckIntervalSeconds: 10
+#    healthCheckIntervalSeconds: 10
     envVars:
       - key: GOOGLE_CLIENT_ID
       - key: GOOGLE_CLIENT_SECRET
