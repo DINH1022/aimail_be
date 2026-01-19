@@ -18,4 +18,6 @@ public class SnoozeEmailRequest {
     private Instant snoozeUntil;
     
     private String note;
+    
+    private String previousLabelId;
 }

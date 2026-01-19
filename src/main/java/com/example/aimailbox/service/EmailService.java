@@ -221,8 +221,21 @@ public class EmailService {
             throw new RuntimeException("Unauthorized");
         }
         
-        // Save current status to restore later
-        email.setPreviousStatus(email.getStatus());
+        if (request.getPreviousLabelId() != null && !request.getPreviousLabelId().isEmpty()) {
+            email.setPreviousLabelIds(request.getPreviousLabelId());
+            email.setPreviousStatus(EmailStatus.DONE); // Or any non-INBOX status to avoid defaulting to INBOX
+        } else {
+            // Check actual labels in Gmail to determine previous status if not provided
+            try {
+                var threadDetail = proxyMailService.getThreadDetail(email.getThreadId()).block();
+                boolean isInInbox = threadDetail.getLabelIds() != null && threadDetail.getLabelIds().contains("INBOX");
+                email.setPreviousStatus(isInInbox ? EmailStatus.INBOX : EmailStatus.DONE);
+            } catch (Exception e) {
+                log.warn("Failed to check Gmail labels for snooze, fallback to current status", e);
+                email.setPreviousStatus(EmailStatus.INBOX); // Fallback to safe default
+            }
+        }
+
         email.setStatus(EmailStatus.SNOOZED);
         email.setSnoozedUntil(request.getSnoozeUntil());
         
@@ -256,8 +269,21 @@ public class EmailService {
                     return syncEmailFromGmail(user, threadId);
                 });
         
-        // Save current status to restore later
-        email.setPreviousStatus(email.getStatus());
+        if (request.getPreviousLabelId() != null && !request.getPreviousLabelId().isEmpty()) {
+            email.setPreviousLabelIds(request.getPreviousLabelId());
+            email.setPreviousStatus(EmailStatus.DONE);
+        } else {
+            // Check actual labels in Gmail to determine previous status
+            try {
+                var threadDetail = proxyMailService.getThreadDetail(email.getThreadId()).block();
+                boolean isInInbox = threadDetail.getLabelIds() != null && threadDetail.getLabelIds().contains("INBOX");
+                email.setPreviousStatus(isInInbox ? EmailStatus.INBOX : EmailStatus.DONE);
+            } catch (Exception e) {
+                log.warn("Failed to check Gmail labels for snooze, fallback to current status", e);
+                email.setPreviousStatus(EmailStatus.INBOX); // Fallback
+            }
+        }
+
         email.setStatus(EmailStatus.SNOOZED);
         email.setSnoozedUntil(request.getSnoozeUntil());
         
@@ -385,14 +411,26 @@ public class EmailService {
                 ? email.getPreviousStatus() 
                 : EmailStatus.INBOX;
         
+        String previousLabelId = email.getPreviousLabelIds();
+        
         email.setStatus(restoreStatus);
         email.setSnoozedUntil(null);
         email.setPreviousStatus(null);
+        email.setPreviousLabelIds(null); // Clear previous label
         
         email = emailRepository.save(email);
         log.info("Unsnoozed email {} back to {}", id, restoreStatus);
         
-        if (restoreStatus == EmailStatus.INBOX) {
+        if (previousLabelId != null && !previousLabelId.isEmpty()) {
+             try {
+                proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
+                        .threadId(email.getThreadId())
+                         .addLabelIds(Collections.singletonList(previousLabelId))
+                        .build()).block();
+            } catch (Exception e) {
+                 log.warn("Failed to restore label {} on unsnooze", previousLabelId, e);
+            }
+        } else if (restoreStatus == EmailStatus.INBOX) {
             try {
                 proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
                         .threadId(email.getThreadId())
@@ -424,28 +462,36 @@ public class EmailService {
                         ? email.getPreviousStatus() 
                         : EmailStatus.INBOX;
                 
+                String previousLabelId = email.getPreviousLabelIds();
+
                 email.setStatus(restoreStatus);
                 email.setSnoozedUntil(null);
                 email.setPreviousStatus(null);
+                email.setPreviousLabelIds(null);
                 
                 emailRepository.save(email);
                 log.info("Auto-restored email {} from snooze to {}", email.getId(), restoreStatus);
                 
-                 if (restoreStatus == EmailStatus.INBOX) {
-                    try {
-                         UsernamePasswordAuthenticationToken authentication = 
-                                 new UsernamePasswordAuthenticationToken(email.getUser(), null, Collections.emptyList());
-                         SecurityContextHolder.getContext().setAuthentication(authentication);
+                try {
+                     UsernamePasswordAuthenticationToken authentication = 
+                             new UsernamePasswordAuthenticationToken(email.getUser(), null, Collections.emptyList());
+                     SecurityContextHolder.getContext().setAuthentication(authentication);
 
+                     if (previousLabelId != null && !previousLabelId.isEmpty()) {
+                         proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
+                                .threadId(email.getThreadId())
+                                .addLabelIds(Collections.singletonList(previousLabelId))
+                                .build()).block();
+                     } else if (restoreStatus == EmailStatus.INBOX) {
                         proxyMailService.modifyMessageLabels(ModifyEmailRequest.builder()
                                 .threadId(email.getThreadId())
                                 .addLabelIds(Collections.singletonList("INBOX"))
                                 .build()).block();
-                    } catch (Exception e) {
-                        log.warn("Failed to sync auto-restore label with Gmail for email {}", email.getId(), e);
-                    } finally {
-                        SecurityContextHolder.clearContext();
                     }
+                } catch (Exception e) {
+                    log.warn("Failed to sync auto-restore label with Gmail for email {}", email.getId(), e);
+                } finally {
+                    SecurityContextHolder.clearContext();
                 }
             }
         }

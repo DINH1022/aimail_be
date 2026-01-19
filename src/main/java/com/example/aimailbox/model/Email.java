@@ -67,6 +67,9 @@ public class Email {
     @Column(columnDefinition = "TEXT")
     private String labelIds;
 
+    @Column(name = "previous_label_ids", columnDefinition = "TEXT")
+    private String previousLabelIds;
+
     @Column(name = "is_read")
     private Boolean isRead; 
 
