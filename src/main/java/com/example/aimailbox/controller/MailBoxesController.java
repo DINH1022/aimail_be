@@ -38,7 +38,7 @@ public class MailBoxesController {
             @RequestParam(required = false) String pageToken,
             @RequestParam(required = false) String query,
             @RequestParam(required = false, defaultValue = "false") Boolean includeSpamTrash) {
-        return proxyMailService.getListThreads(maxResults, pageToken, query, id, includeSpamTrash);
+        return proxyMailService.getListThreadsWithSnoozeFilter(maxResults, pageToken, query, id, includeSpamTrash);
     }
     @PostMapping
     public Mono<LabelDetailResponse> createLabel(@Valid @RequestBody LabelCreationRequest request) {

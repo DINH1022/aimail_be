@@ -6,9 +6,11 @@ import com.example.aimailbox.dto.request.LabelUpdateRequest;
 import com.example.aimailbox.dto.request.ModifyEmailRequest;
 import com.example.aimailbox.dto.response.*;
 import com.example.aimailbox.dto.response.mail.*;
+import com.example.aimailbox.dto.response.mail.Thread;
 import com.example.aimailbox.helper.UserHelper;
 import com.example.aimailbox.model.KanbanColumn;
 import com.example.aimailbox.model.User;
+import com.example.aimailbox.repository.EmailRepository;
 import com.example.aimailbox.repository.KanbanColumnRepository;
 import com.example.aimailbox.wrapper.LabelWrapper;
 import jakarta.mail.MessagingException;
@@ -35,6 +37,8 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +54,7 @@ public class ProxyMailService {
     final WebClient googleGenerativeClient;
     final KanbanColumnRepository kanbanColumnRepository;
     final UserHelper userHelper;
+    final EmailRepository emailRepository;
     @Value("${google.generative-api-key:}")
     String googleGenerativeApiKey;
 
@@ -103,6 +108,31 @@ public class ProxyMailService {
                  .retrieve()
                  .bodyToMono(Void.class)
                 .onErrorMap(e -> new RuntimeException("Failed to delete label", e));
+    }
+    public Mono<ListThreadResponse> getListThreadsWithSnoozeFilter(
+            Integer maxResults, String pageToken, String query, String labelId, Boolean includeSpamTrash) {
+
+        return getListThreads(maxResults, pageToken, query, labelId, includeSpamTrash)
+                .flatMap(response -> {
+                    if (response.getThreads() == null || response.getThreads().isEmpty()) {
+                        return Mono.just(response);
+                    }
+                    List<String> apiThreadIds = response.getThreads().stream()
+                            .map(Thread::getId)
+                            .toList();
+                    return Mono.fromCallable(() ->
+                                    emailRepository.findSnoozedThreadIds(apiThreadIds, Instant.now())
+                            )
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .map(snoozedThreadIds -> {
+                                List<Thread> filteredThreads = response.getThreads().stream()
+                                        .filter(thread -> !snoozedThreadIds.contains(thread.getId()))
+                                        .collect(Collectors.toList());
+
+                                response.setThreads(filteredThreads);
+                                return response;
+                            });
+                });
     }
 
     public Mono<ListThreadResponse> getListThreads(Integer maxResults, String pageToken, String query, String labelId,

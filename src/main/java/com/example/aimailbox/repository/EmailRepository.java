@@ -67,4 +67,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
     List<Email> searchBySemantic(@Param("userId") Long userId,
                                  @Param("queryVector") float[] queryVector,
                                  @Param("threshold") double threshold);
+    @Query("SELECT e.threadId FROM Email e WHERE e.threadId IN :threadIds AND e.snoozedUntil > :now")
+    List<String> findSnoozedThreadIds(@Param("threadIds") List<String> threadIds, @Param("now") Instant now);
 }
