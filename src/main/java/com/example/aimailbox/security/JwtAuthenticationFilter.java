@@ -12,11 +12,13 @@ import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Collections;
 
+@Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
@@ -27,10 +29,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain filterChain) throws ServletException, IOException {
+    protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain) throws ServletException, IOException {
         String header = request.getHeader("Authorization");
+        String token = null;
         if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
+            token = header.substring(7);
+        } else {
+            // Try to read accessToken from cookies (HttpOnly cookie set by OAuth callback)
+            if (request.getCookies() != null) {
+                for (jakarta.servlet.http.Cookie c : request.getCookies()) {
+                    if ("accessToken".equals(c.getName())) {
+                        token = c.getValue();
+                        break;
+                    }
+                }
+            }
+        }
+        if (token != null) {
             try {
                 Jws<Claims> claimsJws = jwtUtil.validateToken(token);
                 Claims claims = claimsJws.getBody();

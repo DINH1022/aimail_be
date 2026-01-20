@@ -1,4 +1,4 @@
-package com.example.aimailbox.dto;
+package com.example.aimailbox.dto.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -1,8 +1,7 @@
 package com.example.aimailbox.service;
 
-import com.example.aimailbox.dto.AuthRequest;
-import com.example.aimailbox.dto.AuthResponse;
-import com.example.aimailbox.dto.GoogleRequest;
+import com.example.aimailbox.dto.request.AuthRequest;
+import com.example.aimailbox.dto.response.AuthResponse;
 import com.example.aimailbox.model.RefreshToken;
 import com.example.aimailbox.model.User;
 import com.example.aimailbox.repository.UserRepository;
@@ -51,23 +50,6 @@ public class AuthService {
                 .provider("local")
                 .build();
         user = userRepository.save(user);
-        String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail());
-        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
-        return new AuthResponse(accessToken, refreshToken.getToken(), user.getEmail());
-    }
-
-    public AuthResponse loginWithGoogle(GoogleRequest req) {
-        String idToken = req.getIdToken();
-        if (idToken == null || !idToken.contains("@")) {
-            throw new RuntimeException("Invalid Google token (mock verification failed)");
-        }
-        User user = userRepository.findByEmail(idToken).orElseGet(() -> {
-            User u = User.builder()
-                    .email(idToken)
-                    .provider("google")
-                    .build();
-            return userRepository.save(u);
-        });
         String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getEmail());
         RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
         return new AuthResponse(accessToken, refreshToken.getToken(), user.getEmail());

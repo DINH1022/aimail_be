@@ -1,15 +1,32 @@
 package com.example.aimailbox.exception;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(WebClientResponseException.class)
+    public ResponseEntity<Map<String, String>> handleWebClientResponseException(WebClientResponseException ex) {
+        Map<String, String> error = new HashMap<>();
+        
+        if (ex.getStatusCode().value() == 401) {
+            error.put("message", "Gmail authentication failed. Please logout and login again with Google.");
+        } else {
+            error.put("message", "Failed to send email: " + ex.getMessage());
+        }
+        
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(error);
+    }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleRuntimeException(RuntimeException ex) {
@@ -20,7 +37,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = HttpStatus.BAD_REQUEST;
         String message = ex.getMessage().toLowerCase();
 
-        if (message.contains("invalid credentials")) {
+        if (message.contains("invalid credentials") || message.contains("sign in with google") || message.contains("login again")) {
             status = HttpStatus.UNAUTHORIZED;
         } else if (message.contains("email already in use")) {
             status = HttpStatus.CONFLICT;
@@ -28,13 +45,17 @@ public class GlobalExceptionHandler {
             status = HttpStatus.NOT_FOUND;
         }
 
-        return ResponseEntity.status(status).body(error);
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(error);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleException(Exception ex) {
         Map<String, String> error = new HashMap<>();
         error.put("message", "An unexpected error occurred");
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(error);
     }
 }

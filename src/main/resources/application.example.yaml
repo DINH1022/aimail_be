@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: AImailbox
+  datasource:
+    url: jdbc:postgresql://ep-green-base-a1cp4x6y-pooler.ap-southeast-1.aws.neon.tech/neondb
+    username: neondb_owner
+    password: your_database_password_here
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+jwt:
+  secret: your_jwt_secret_key_here_must_be_long_enough
+  access-expiration-minutes: 15
+  refresh-expiration-days: 7
+
+google:
+  client-id: your_google_client_id.apps.googleusercontent.com
+  client-secret: your_google_client_secret
+  redirect-uri: http://localhost:8080/auth/google/callback
+  generative-api-key: your_gemini_api_key
+
+# Frontend callback URL used by backend to redirect user after Google auth
+frontend:
+  callback-url: http://localhost:5174/auth/google/callback
+#  callback-url: https://your-production-app.vercel.app/auth/google/callback
+
+cors:
+  # include deployed Vercel frontend plus local dev origins
+  allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:3000
