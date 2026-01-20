@@ -1,4 +1,4 @@
-# AI Email Dashboard - Backend
+# AIMail - Backend
 
 **Team:** 22120376-22120433-22120434
 
@@ -28,7 +28,7 @@ This project transforms the traditional inbox into a workflow-centric Kanban boa
 
 ## Technology Stack
 
-- **Backend framework**: Java 17+ with Spring Boot
+- **Backend framework**: Java 21+ with Spring Boot
 - **Database**: PostgreSQL (with `pgvector` for embeddings)
 - **Authentication**: Google OAuth2 + JWT (Dual Token System)
 - **AI/ML**: Google Gemini API (Summarization & Embeddings)
@@ -41,7 +41,7 @@ This project transforms the traditional inbox into a workflow-centric Kanban boa
 
 ### Prerequisites
 
-- Java 17+
+- Java 21+
 - Maven 3.6+
 - PostgreSQL
 
@@ -51,17 +51,20 @@ Create `src/main/resources/application.yaml` with the following variables:
 
 ```yaml
 spring:
+  application:
+    name: AImailbox
   datasource:
-    url: jdbc:postgresql://localhost:5432/aimailbox # Must support vector extension
-    username: postgres
-    password: password
+    url: your_database_url # Must support vector extension
+    username: your_database_username
+    password: your_database_passsword
   jpa:
     hibernate:
       ddl-auto: update
 
 jwt:
   secret: <your_256_bit_jwt_secret>
-
+  access-expiration-minutes: 15
+  refresh-expiration-days: 7
 google:
   client-id: <your_google_client_id>
   client-secret: <your_google_client_secret>
@@ -69,7 +72,9 @@ google:
   generative-api-key: <your_gemini_api_key> # For AI features
 
 frontend:
-  callback-url: http://localhost:5173/auth/google/callback
+  callback-url: http://localhost:5174/auth/google/callback
+cors:
+  allowed-origins:http://localhost:5174
 ```
 
 ### 2. Google Cloud Setup
@@ -148,7 +153,7 @@ This project uses a **Dual-Token System** to ensure security while maintaining a
 
 1. **Application Security (Frontend <-> Backend)**:
    - **Access Token**: Short-lived JWT (15 min) stored in HttpOnly cookies.
-   - **Refresh Token**: Long-lived UUID stored in DB, rotated on every use.
+   - **Refresh Token**: Long-lived stored in DB, rotated on every use.
    - **Protection**: CRS handling via SameSite cookies, XSS protection via HttpOnly.
 
 2. **Gmail Security (Backend <-> Google)**:
