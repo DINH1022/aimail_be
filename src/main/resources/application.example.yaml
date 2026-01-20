@@ -13,7 +13,7 @@ spring:
 jwt:
   secret: your_jwt_secret_key_here_must_be_long_enough
   access-expiration-minutes: 15
-  refresh-expiration-days: 7
+  refresh-expiration-days: 9
 
 google:
   client-id: your_google_client_id.apps.googleusercontent.com
