@@ -1,0 +1,30 @@
+name: Spring Boot CI/CD (Render Host)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # Thêm cái này để lỡ GitHub không nhận push thì bấm nút chạy tay được
+
+jobs:
+  ci-cd:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Lấy code
+      - uses: actions/checkout@v4
+
+      # 2. Setup Java & Cache (Viết gộp cho gọn)
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: 'maven' # Tự động cache thư mục ~/.m2, không cần step riêng
+
+      # 3. CI: Chạy test kỹ càng (Verify)
+      # -B: Batch mode (để log không bị spam các dòng tải thư viện)
+      - name: Build and Verify
+        run: mvn -B clean verify
+
+      # 4. CD: Gọi Render (Chỉ chạy khi bước 3 thành công)
+      - name: Deploy to Render
+        if: success()
+        run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
