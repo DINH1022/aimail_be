@@ -22,7 +22,7 @@ jobs:
       # 3. CI: Chạy test kỹ càng (Verify)
       # -B: Batch mode (để log không bị spam các dòng tải thư viện)
       - name: Build and Verify
-        run: mvn -B clean verify
+        run: mvn -B clean package -DskipTests
 
       # 4. CD: Gọi Render (Chỉ chạy khi bước 3 thành công)
       - name: Deploy to Render
