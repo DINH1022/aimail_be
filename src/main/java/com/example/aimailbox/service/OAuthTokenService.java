@@ -16,6 +16,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +26,9 @@ public class OAuthTokenService {
 
     private final UserRepository userRepository;
     private final WebClient googleOauthClient;
+    
+    // Map to track ongoing refresh operations per user to avoid duplicate refresh calls
+    private final Map<Long, Mono<GoogleTokenResponse>> refreshOperations = new ConcurrentHashMap<>();
 
     @Value("${google.client-id:}")
     private String clientId;
@@ -43,6 +48,7 @@ public class OAuthTokenService {
                         return Mono.error(new RuntimeException("No Google access token for user"));
                     }
 
+                    // Check if token is expired or expiring soon (within 5 minutes)
                     if (freshUser.getGoogleTokenExpiryTime() != null &&
                             freshUser.getGoogleTokenExpiryTime().isBefore(Instant.now().plusSeconds(300))) {
 
@@ -52,14 +58,27 @@ public class OAuthTokenService {
                         }
 
                         log.info("Access token expiring soon for user {}, refreshing...", freshUser.getEmail());
-                        return refreshAccessTokenReactive(freshUser.getGoogleRefreshToken())
+                        
+                        // Use computeIfAbsent to ensure only one refresh operation happens at a time per user
+                        Mono<GoogleTokenResponse> refreshMono = refreshOperations.computeIfAbsent(
+                            freshUser.getId(),
+                            userId -> refreshAccessTokenReactive(freshUser.getGoogleRefreshToken())
                                 .doOnNext(resp -> {
-                                    saveTokensToUser(freshUser, resp);
-                                    user.setGoogleAccessToken(freshUser.getGoogleAccessToken());
-                                    user.setGoogleRefreshToken(freshUser.getGoogleRefreshToken());
-                                    user.setGoogleTokenExpiryTime(freshUser.getGoogleTokenExpiryTime());
+                                    // Reload user from DB to avoid stale state
+                                    User userToUpdate = userRepository.findById(userId)
+                                        .orElseThrow(() -> new RuntimeException("User not found during token save"));
+                                    saveTokensToUser(userToUpdate, resp);
+                                    log.info("Successfully refreshed and saved token for user {}", userToUpdate.getEmail());
                                 })
-                                .map(GoogleTokenResponse::getAccessToken);
+                                .doFinally(signal -> {
+                                    // Remove from map when done (success or error)
+                                    refreshOperations.remove(userId);
+                                    log.debug("Removed refresh operation from cache for user {}", userId);
+                                })
+                                .cache() // Cache result so multiple subscribers get the same result
+                        );
+                        
+                        return refreshMono.map(GoogleTokenResponse::getAccessToken);
                     }
 
                     log.debug("Using existing valid token for user {}", freshUser.getEmail());

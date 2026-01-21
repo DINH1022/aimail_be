@@ -57,6 +57,7 @@ public class WebClientConfig {
                         Authentication auth = ctx.get(Authentication.class);
                         if (auth.getPrincipal() instanceof User user) {
                             log.debug("Using authentication from Reactor context for user: {}", user.getEmail());
+                            // Always get fresh token from service which checks DB and refreshes if needed
                             return oAuthTokenService.getValidAccessTokenReactive(user)
                                     .map(token -> {
                                         log.debug("Using access token for user {}: {}...", user.getEmail(), token.substring(0, Math.min(20, token.length())));
@@ -72,6 +73,7 @@ public class WebClientConfig {
                                 Authentication auth = secCtx.getAuthentication();
                                 if (auth != null && auth.getPrincipal() instanceof User user) {
                                     log.debug("Using authentication from SecurityContextHolder for user: {}", user.getEmail());
+                                    // Always get fresh token from service which checks DB and refreshes if needed
                                     return oAuthTokenService.getValidAccessTokenReactive(user)
                                             .map(token -> {
                                                 log.debug("Using access token for user {}: {}...", user.getEmail(), token.substring(0, Math.min(20, token.length())));
@@ -87,7 +89,7 @@ public class WebClientConfig {
                 .defaultIfEmpty(request)
                 .onErrorResume(e -> {
                     log.error("Failed to add authorization header", e);
-                    return Mono.just(request);
+                    return Mono.error(new RuntimeException("Failed to authenticate request: " + e.getMessage(), e));
                 })
         );
     }
